@@ -10,7 +10,11 @@ import { useAuthStore } from '../store/authStore';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import { canCreateOpportunity } from '../utils/rbac';
-import type { Opportunity, OpportunityStage } from '../types/contracts';
+import type {
+  FieldDefinition,
+  Opportunity,
+  OpportunityStage,
+} from '../types/contracts';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import Modal from '../components/Modal';
 import EmptyState from '../components/EmptyState';
@@ -26,6 +30,26 @@ const STAGE_LABEL: Record<OpportunityStage, string> = {
   won: '成交',
   lost: '丢单',
 };
+
+/**
+ * Lightly-typed accessor for the two new tables. The Database type stub
+ * in api/supabase.ts does not yet know about them, so we cast through
+ * `unknown` at this single callsite.
+ */
+type FieldClient = {
+  from: (table: string) => {
+    select: (cols?: string) => {
+      eq: (col: string, val: unknown) => {
+        order: (col: string, opts?: { ascending: boolean }) => Promise<{
+          data: unknown;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+    insert: (rows: unknown) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+};
+const fieldClient = asTypedClient(supabase) as unknown as FieldClient | null;
 
 const NewOpportunitySchema = z.object({
   name: z.string().min(2, '名称至少 2 字符'),
@@ -55,6 +79,11 @@ export default function OpportunitiesPage() {
   const [stage, setStage] = useState<OpportunityStage | 'all'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Active custom field definitions + their current draft values (id → string).
+  // Re-fetched each time the modal opens so admins can pick up schema edits live.
+  const [activeFields, setActiveFields] = useState<FieldDefinition[]>([]);
+  const [fieldDraft, setFieldDraft] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!client || !userId) {
@@ -99,6 +128,24 @@ export default function OpportunitiesPage() {
 
   const onCreate = async (values: NewOpportunityInput) => {
     if (!client || !userId) return;
+    // Client-side validation for custom fields (required + non-empty).
+    const errs: Record<string, string> = {};
+    for (const def of activeFields) {
+      const raw = fieldDraft[def.id] ?? '';
+      const trimmed = raw.trim();
+      if (def.required && trimmed === '') {
+        errs[def.id] = '此字段为必填';
+        continue;
+      }
+      if (trimmed !== '' && def.type === 'number' && Number.isNaN(Number(trimmed))) {
+        errs[def.id] = '请填写有效数字';
+      }
+    }
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
     setCreating(true);
     try {
       const row: Database['public']['Tables']['opportunities']['Insert'] = {
@@ -114,16 +161,75 @@ export default function OpportunitiesPage() {
         .select('*')
         .maybeSingle();
       if (error) throw error;
+      const newId = data ? (data as unknown as OppRow).id : null;
+
+      // Insert custom field values (one row per non-empty value).
+      if (newId && fieldClient && activeFields.length > 0) {
+        const valueRows = activeFields
+          .map((def) => {
+            const raw = fieldDraft[def.id] ?? '';
+            const trimmed = raw.trim();
+            if (trimmed === '') return null;
+            return {
+              opportunity_id: newId,
+              field_id: def.id,
+              value: trimmed,
+            };
+          })
+          .filter(
+            (r): r is { opportunity_id: string; field_id: string; value: string } => r !== null,
+          );
+        if (valueRows.length > 0) {
+          const vRes = await fieldClient.from('opportunity_field_values').insert(valueRows);
+          if (vRes.error) {
+            // Surface the error but don't block the user — the opportunity
+            // exists, the values just didn't persist.
+            toast.error(`商机已创建,但自定义字段保存失败: ${vRes.error.message}`);
+          }
+        }
+      }
+
       toast.success('商机已创建');
       setShowCreate(false);
       reset({ name: '', customer: '', amount: '', stage: 'lead' });
-      if (data) navigate(`/opportunities/${(data as unknown as OppRow).id}`);
+      setFieldDraft({});
+      if (newId) navigate(`/opportunities/${newId}`);
       else void loadAll();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '创建失败');
     } finally {
       setCreating(false);
     }
+  };
+
+  /** Open the create modal and refresh the active field catalog. */
+  const openCreateModal = async () => {
+    setShowCreate(true);
+    setFieldDraft({});
+    setFieldErrors({});
+    if (!fieldClient) return;
+    try {
+      const res = await fieldClient
+        .from('opportunity_field_definitions')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+      if (res.error) throw new Error(res.error.message);
+      setActiveFields(
+        ((res.data ?? []) as unknown as FieldDefinition[]).sort(
+          (a, b) => a.display_order - b.display_order,
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载自定义字段失败');
+    }
+  };
+
+  const closeCreateModal = () => {
+    if (creating) return;
+    setShowCreate(false);
+    setFieldDraft({});
+    setFieldErrors({});
   };
 
   const loadAll = async () => {
@@ -156,13 +262,29 @@ export default function OpportunitiesPage() {
       align: 'right',
       render: (o) =>
         o.amount !== null
-          ? new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 0 }).format(o.amount)
+          ? new Intl.NumberFormat('zh-CN', {
+              style: 'currency',
+              currency: 'CNY',
+              maximumFractionDigits: 0,
+            }).format(o.amount)
           : '—',
     },
     {
       key: 'stage',
       header: '阶段',
-      render: (o) => <span className={`tag ${o.stage === 'won' ? 'tag-success' : o.stage === 'lost' ? 'tag-neutral' : 'tag-info'}`}>{STAGE_LABEL[o.stage]}</span>,
+      render: (o) => (
+        <span
+          className={`tag ${
+            o.stage === 'won'
+              ? 'tag-success'
+              : o.stage === 'lost'
+                ? 'tag-neutral'
+                : 'tag-info'
+          }`}
+        >
+          {STAGE_LABEL[o.stage]}
+        </span>
+      ),
     },
     {
       key: 'updated',
@@ -198,7 +320,7 @@ export default function OpportunitiesPage() {
           <p className="page-subtitle">售前录入与跟踪 · 共 {allOpps.length} 个</p>
         </div>
         {canCreate && (
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+          <button className="btn btn-primary" onClick={openCreateModal}>
             新建商机
           </button>
         )}
@@ -245,15 +367,13 @@ export default function OpportunitiesPage() {
 
       <Modal
         open={showCreate}
-        onClose={() => {
-          if (!creating) setShowCreate(false);
-        }}
+        onClose={closeCreateModal}
         title="新建商机"
         actions={
           <>
             <button
               className="btn btn-secondary"
-              onClick={() => setShowCreate(false)}
+              onClick={closeCreateModal}
               disabled={creating}
             >
               取消
@@ -272,7 +392,11 @@ export default function OpportunitiesPage() {
         <form id="new-opp-form" onSubmit={handleSubmit(onCreate)}>
           <div className="field">
             <label className="field-label">名称</label>
-            <input className="input" placeholder="如:某银行核心网改造项目" {...register('name')} />
+            <input
+              className="input"
+              placeholder="如:某银行核心网改造项目"
+              {...register('name')}
+            />
             {errors.name && (
               <p style={{ color: 'var(--danger)', fontSize: 12, marginTop: 6 }}>
                 {errors.name.message}
@@ -313,6 +437,94 @@ export default function OpportunitiesPage() {
               ))}
             </select>
           </div>
+
+          {activeFields.length > 0 && (
+            <div
+              style={{
+                marginTop: 16,
+                paddingTop: 16,
+                borderTop: '1px solid var(--border)',
+              }}
+            >
+              <h4
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--text-muted)',
+                  margin: '0 0 12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                }}
+              >
+                自定义字段
+              </h4>
+              {activeFields.map((def) => {
+                const err = fieldErrors[def.id];
+                const value = fieldDraft[def.id] ?? '';
+                return (
+                  <div className="field" key={def.id}>
+                    <label className="field-label">
+                      {def.label}
+                      {def.required && (
+                        <span style={{ color: 'var(--danger)', marginLeft: 4 }}>*</span>
+                      )}
+                    </label>
+                    {def.type === 'text' && (
+                      <input
+                        className="input"
+                        type="text"
+                        value={value}
+                        onChange={(e) =>
+                          setFieldDraft((prev) => ({ ...prev, [def.id]: e.target.value }))
+                        }
+                      />
+                    )}
+                    {def.type === 'number' && (
+                      <input
+                        className="input"
+                        type="number"
+                        value={value}
+                        onChange={(e) =>
+                          setFieldDraft((prev) => ({ ...prev, [def.id]: e.target.value }))
+                        }
+                      />
+                    )}
+                    {def.type === 'date' && (
+                      <input
+                        className="input"
+                        type="date"
+                        value={value}
+                        onChange={(e) =>
+                          setFieldDraft((prev) => ({ ...prev, [def.id]: e.target.value }))
+                        }
+                      />
+                    )}
+                    {def.type === 'select' && (
+                      <select
+                        className="select"
+                        value={value}
+                        onChange={(e) =>
+                          setFieldDraft((prev) => ({ ...prev, [def.id]: e.target.value }))
+                        }
+                      >
+                        <option value="">— 请选择 —</option>
+                        {(def.options ?? []).map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {err && (
+                      <p style={{ color: 'var(--danger)', fontSize: 12, marginTop: 6 }}>
+                        {err}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </form>
       </Modal>
     </div>

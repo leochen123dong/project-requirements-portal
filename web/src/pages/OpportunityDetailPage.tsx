@@ -9,7 +9,12 @@ import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import { canHandoverOpportunity } from '../utils/rbac';
-import type { Opportunity, Profile } from '../types/contracts';
+import type {
+  FieldDefinition,
+  FieldValue,
+  Opportunity,
+  Profile,
+} from '../types/contracts';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -37,6 +42,54 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 /**
+ * Local cast for the two new tables. Database type stub in api/supabase.ts
+ * does not yet include `opportunity_field_definitions` / `opportunity_field_values`
+ * — the cast stays here at this single callsite.
+ */
+type FieldClient = {
+  from: (table: string) => {
+    select: (cols?: string) => {
+      eq: (col: string, val: unknown) => Promise<{
+        data: unknown;
+        error: { message: string } | null;
+      }>;
+    };
+  };
+};
+const fieldClient = asTypedClient(supabase) as unknown as FieldClient | null;
+
+/**
+ * Renders a field value according to its definition type:
+ *   - text    → plain text
+ *   - number  → formatted with thousands separators
+ *   - date    → zh-CN locale date
+ *   - select  → highlighted tag
+ */
+function renderFieldValue(def: FieldDefinition, value: string | null): JSX.Element {
+  if (value === null || value === '') {
+    return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+  }
+  switch (def.type) {
+    case 'number': {
+      const n = Number(value);
+      if (Number.isNaN(n)) return <>{value}</>;
+      return <>{new Intl.NumberFormat('zh-CN').format(n)}</>;
+    }
+    case 'date': {
+      // ISO yyyy-mm-dd → Date, then format in zh-CN
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return <>{value}</>;
+      return <>{d.toLocaleDateString('zh-CN')}</>;
+    }
+    case 'select':
+      return <span className="tag tag-info">{value}</span>;
+    case 'text':
+    default:
+      return <>{value}</>;
+  }
+}
+
+/**
  * Opportunity detail. Shows 5 required artifact slots with upload UI
  * deferred to ProjectDetailPage (post-handover). The "立项交接" button
  * opens a modal to select PM; on confirm, INSERTs into projects and
@@ -57,6 +110,11 @@ export default function OpportunityDetailPage() {
   const [handoverValues, setHandoverValues] = useState<HandoverInput | null>(null);
   const [handovering, setHandoverering] = useState(false);
 
+  // Custom field values for this opportunity, paired with their definitions.
+  const [customValues, setCustomValues] = useState<
+    Array<{ def: FieldDefinition; value: string | null }>
+  >([]);
+
   const {
     register,
     handleSubmit,
@@ -76,15 +134,41 @@ export default function OpportunityDetailPage() {
     setLoading(true);
     (async () => {
       try {
-        const [oppRes, pmsRes] = await Promise.all([
+        // Run independent queries in parallel: opportunity, PM list,
+        // active field definitions, and stored values for this opportunity.
+        const [oppRes, pmsRes, defsRes, valsRes] = await Promise.all([
           client.from('opportunities').select('*').eq('id', id).maybeSingle(),
           client.from('profiles').select('*').eq('role', 'pm'),
+          fieldClient
+            ? fieldClient
+                .from('opportunity_field_definitions')
+                .select('*')
+                .eq('is_active', true)
+            : Promise.resolve({ data: [], error: null }),
+          fieldClient
+            ? fieldClient
+                .from('opportunity_field_values')
+                .select('*')
+                .eq('opportunity_id', id)
+            : Promise.resolve({ data: [], error: null }),
         ]);
         if (oppRes.error) throw oppRes.error;
         if (pmsRes.error) throw pmsRes.error;
+        if (defsRes.error) throw new Error(defsRes.error.message);
+        if (valsRes.error) throw new Error(valsRes.error.message);
         if (cancelled) return;
         setOpp((oppRes.data ?? null) as unknown as Opportunity | null);
         setPms((pmsRes.data ?? []) as unknown as Profile[]);
+
+        // Join: for each active definition, look up the stored value (if any).
+        const defs = ((defsRes.data ?? []) as unknown as FieldDefinition[]).sort(
+          (a, b) => a.display_order - b.display_order,
+        );
+        const vals = (valsRes.data ?? []) as unknown as FieldValue[];
+        const byId = new Map(vals.map((v) => [v.field_id, v.value]));
+        setCustomValues(
+          defs.map((d) => ({ def: d, value: byId.get(d.id) ?? null })),
+        );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : '加载失败');
       } finally {
@@ -234,6 +318,35 @@ export default function OpportunityDetailPage() {
           </ul>
         </div>
       </div>
+
+      {customValues.length > 0 && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <h3 className="card-title">自定义字段</h3>
+          <dl
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '160px 1fr',
+              gap: 8,
+              margin: 0,
+            }}
+          >
+            {customValues.map(({ def, value }) => (
+              <div
+                key={def.id}
+                style={{ display: 'contents' }}
+              >
+                <dt style={{ color: 'var(--text-muted)' }}>
+                  {def.label}
+                  {def.required && (
+                    <span style={{ color: 'var(--danger)', marginLeft: 4 }}>*</span>
+                  )}
+                </dt>
+                <dd style={{ margin: 0 }}>{renderFieldValue(def, value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       <Modal
         open={showHandover}

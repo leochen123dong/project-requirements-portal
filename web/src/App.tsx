@@ -11,6 +11,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import TicketsPage from './pages/TicketsPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AdminCustomFieldsPage from './pages/AdminCustomFieldsPage';
 import { useAuthStore } from './store/authStore';
 import { fetchProfile, supabase } from './api/supabase';
 
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/admin" element={<AdminDashboardPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
+        <Route path="/admin/fields" element={<AdminCustomFieldsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

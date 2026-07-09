@@ -4,7 +4,7 @@ import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/authStore';
-import { canManageUsers, canViewAdminDashboard } from '../utils/rbac';
+import { canManageCustomFields, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
 import type { AuditLog, ITHubSyncLog, Milestone, Project, Task } from '../types/contracts';
 import KpiTile from '../components/KpiTile';
 import EmptyState from '../components/EmptyState';
@@ -159,13 +159,22 @@ export default function AdminDashboardPage() {
         />
       </div>
 
-      {canManageUsers(role as 'admin') && (
+      {(canManageUsers(role as 'admin') || canManageCustomFields(role as 'admin')) && (
         <div className="grid-cards" style={{ marginBottom: 24 }}>
-          <Link to="/admin/users" className="tile">
-            <div className="tile-icon">👥</div>
-            <h3 className="tile-title">用户管理</h3>
-            <p className="tile-desc">邀请、修改角色、删除用户</p>
-          </Link>
+          {canManageUsers(role as 'admin') && (
+            <Link to="/admin/users" className="tile">
+              <div className="tile-icon">👥</div>
+              <h3 className="tile-title">用户管理</h3>
+              <p className="tile-desc">邀请、修改角色、删除用户</p>
+            </Link>
+          )}
+          {canManageCustomFields(role as 'admin') && (
+            <Link to="/admin/fields" className="tile">
+              <div className="tile-icon">🧩</div>
+              <h3 className="tile-title">自定义字段</h3>
+              <p className="tile-desc">管理商机可选字段 (行业、来源等)</p>
+            </Link>
+          )}
         </div>
       )}
 
