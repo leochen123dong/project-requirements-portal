@@ -5,6 +5,7 @@ import {
   canCreateOpportunity,
   canHandoverOpportunity,
   canDeleteOpportunity,
+  canUpdateOpportunity,
   canEditProject,
   canAssignTask,
   canCompleteTask,
@@ -183,6 +184,14 @@ describe('action helpers — individual cells', () => {
     expect(canDeleteOpportunity('pm')).toBe(false);
     expect(canDeleteOpportunity('delivery')).toBe(false);
     expect(canDeleteOpportunity('postsales')).toBe(false);
+  });
+
+  it('canUpdateOpportunity → presales + admin only', () => {
+    expect(canUpdateOpportunity('presales')).toBe(true);
+    expect(canUpdateOpportunity('admin')).toBe(true);
+    expect(canUpdateOpportunity('pm')).toBe(false);
+    expect(canUpdateOpportunity('delivery')).toBe(false);
+    expect(canUpdateOpportunity('postsales')).toBe(false);
   });
 
   it('canAssignTask → pm + delivery + admin', () => {

@@ -8,11 +8,12 @@ import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
-import { canHandoverOpportunity } from '../utils/rbac';
+import { canHandoverOpportunity, canUpdateOpportunity } from '../utils/rbac';
 import type {
   FieldDefinition,
   FieldValue,
   Opportunity,
+  OpportunityStage,
   Profile,
 } from '../types/contracts';
 import EmptyState from '../components/EmptyState';
@@ -110,6 +111,12 @@ export default function OpportunityDetailPage() {
   const [handoverValues, setHandoverValues] = useState<HandoverInput | null>(null);
   const [handovering, setHandoverering] = useState(false);
 
+  // Stage change flow (v0.3 Phase A).
+  const [showStageModal, setShowStageModal] = useState(false);
+  const [pendingStage, setPendingStage] = useState<OpportunityStage | null>(null);
+  const [showStageConfirm, setShowStageConfirm] = useState(false);
+  const [stageChanging, setStageChanging] = useState(false);
+
   // Custom field values for this opportunity, paired with their definitions.
   const [customValues, setCustomValues] = useState<
     Array<{ def: FieldDefinition; value: string | null }>
@@ -125,59 +132,56 @@ export default function OpportunityDetailPage() {
     defaultValues: { pm_id: '' },
   });
 
-  useEffect(() => {
+  const loadAll = async (showSpinner: boolean) => {
     if (!id || !client) {
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      try {
-        // Run independent queries in parallel: opportunity, PM list,
-        // active field definitions, and stored values for this opportunity.
-        const [oppRes, pmsRes, defsRes, valsRes] = await Promise.all([
-          client.from('opportunities').select('*').eq('id', id).maybeSingle(),
-          client.from('profiles').select('*').eq('role', 'pm'),
-          fieldClient
-            ? fieldClient
-                .from('opportunity_field_definitions')
-                .select('*')
-                .eq('is_active', true)
-            : Promise.resolve({ data: [], error: null }),
-          fieldClient
-            ? fieldClient
-                .from('opportunity_field_values')
-                .select('*')
-                .eq('opportunity_id', id)
-            : Promise.resolve({ data: [], error: null }),
-        ]);
-        if (oppRes.error) throw oppRes.error;
-        if (pmsRes.error) throw pmsRes.error;
-        if (defsRes.error) throw new Error(defsRes.error.message);
-        if (valsRes.error) throw new Error(valsRes.error.message);
-        if (cancelled) return;
-        setOpp((oppRes.data ?? null) as unknown as Opportunity | null);
-        setPms((pmsRes.data ?? []) as unknown as Profile[]);
+    if (showSpinner) setLoading(true);
+    try {
+      // Run independent queries in parallel: opportunity, PM list,
+      // active field definitions, and stored values for this opportunity.
+      const [oppRes, pmsRes, defsRes, valsRes] = await Promise.all([
+        client.from('opportunities').select('*').eq('id', id).maybeSingle(),
+        client.from('profiles').select('*').eq('role', 'pm'),
+        fieldClient
+          ? fieldClient
+              .from('opportunity_field_definitions')
+              .select('*')
+              .eq('is_active', true)
+          : Promise.resolve({ data: [], error: null }),
+        fieldClient
+          ? fieldClient
+              .from('opportunity_field_values')
+              .select('*')
+              .eq('opportunity_id', id)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (oppRes.error) throw oppRes.error;
+      if (pmsRes.error) throw pmsRes.error;
+      if (defsRes.error) throw new Error(defsRes.error.message);
+      if (valsRes.error) throw new Error(valsRes.error.message);
+      setOpp((oppRes.data ?? null) as unknown as Opportunity | null);
+      setPms((pmsRes.data ?? []) as unknown as Profile[]);
 
-        // Join: for each active definition, look up the stored value (if any).
-        const defs = ((defsRes.data ?? []) as unknown as FieldDefinition[]).sort(
-          (a, b) => a.display_order - b.display_order,
-        );
-        const vals = (valsRes.data ?? []) as unknown as FieldValue[];
-        const byId = new Map(vals.map((v) => [v.field_id, v.value]));
-        setCustomValues(
-          defs.map((d) => ({ def: d, value: byId.get(d.id) ?? null })),
-        );
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : '加载失败');
-      } finally {
-        !cancelled && setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      // Join: for each active definition, look up the stored value (if any).
+      const defs = ((defsRes.data ?? []) as unknown as FieldDefinition[]).sort(
+        (a, b) => a.display_order - b.display_order,
+      );
+      const vals = (valsRes.data ?? []) as unknown as FieldValue[];
+      const byId = new Map(vals.map((v) => [v.field_id, v.value]));
+      setCustomValues(
+        defs.map((d) => ({ def: d, value: byId.get(d.id) ?? null })),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadAll(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -212,6 +216,29 @@ export default function OpportunityDetailPage() {
       toast.error(e instanceof Error ? e.message : '立项失败');
     } finally {
       setHandoverering(false);
+    }
+  };
+
+  const performStageChange = async () => {
+    if (!client || !opp || !pendingStage) return;
+    setStageChanging(true);
+    try {
+      const update: Database['public']['Tables']['opportunities']['Update'] = {
+        stage: pendingStage,
+      };
+      const { error } = await client
+        .from('opportunities')
+        .update(update)
+        .eq('id', opp.id);
+      if (error) throw error;
+      toast.success(`阶段已更新为 ${STAGE_LABEL[pendingStage]}`);
+      setShowStageConfirm(false);
+      setPendingStage(null);
+      await loadAll(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '更新阶段失败');
+    } finally {
+      setStageChanging(false);
     }
   };
 
@@ -255,6 +282,7 @@ export default function OpportunityDetailPage() {
   }
 
   const canHandover = canHandoverOpportunity(role);
+  const canUpdate = canUpdateOpportunity(role);
 
   return (
     <div className="container">
@@ -266,6 +294,18 @@ export default function OpportunityDetailPage() {
             <span className="tag tag-info" style={{ marginLeft: 6 }}>
               {STAGE_LABEL[opp.stage] ?? opp.stage}
             </span>
+            {canUpdate && (
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ marginLeft: 12, verticalAlign: 'middle' }}
+                onClick={() => {
+                  setPendingStage(opp.stage);
+                  setShowStageModal(true);
+                }}
+              >
+                修改阶段
+              </button>
+            )}
           </p>
         </div>
         {canHandover && (
@@ -399,6 +439,78 @@ export default function OpportunityDetailPage() {
         confirmLabel="确认立项"
         onConfirm={performHandover}
         onCancel={() => setShowConfirm(false)}
+      />
+
+      <Modal
+        open={showStageModal}
+        onClose={() => {
+          setShowStageModal(false);
+          setPendingStage(null);
+        }}
+        title="修改阶段"
+        actions={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowStageModal(false);
+                setPendingStage(null);
+              }}
+            >
+              取消
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={pendingStage === null}
+              onClick={() => {
+                setShowStageModal(false);
+                setShowStageConfirm(true);
+              }}
+            >
+              继续
+            </button>
+          </>
+        }
+      >
+        <div className="field">
+          <label className="field-label">当前阶段</label>
+          <p style={{ margin: '0 0 12px' }}>{STAGE_LABEL[opp.stage] ?? opp.stage}</p>
+        </div>
+        <div className="field">
+          <label className="field-label">新阶段</label>
+          <select
+            className="select"
+            value={pendingStage ?? opp.stage}
+            onChange={(e) => setPendingStage(e.target.value as OpportunityStage)}
+          >
+            {(['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const).map(
+              (s) => (
+                <option key={s} value={s}>
+                  {STAGE_LABEL[s]}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          继续后请确认,阶段变更将记入审计日志。
+        </p>
+      </Modal>
+
+      <ConfirmDialog
+        open={showStageConfirm}
+        loading={stageChanging}
+        title="确认修改阶段"
+        message={`将「${opp.name}」的阶段从「${STAGE_LABEL[opp.stage] ?? opp.stage}」改为「${
+          pendingStage ? STAGE_LABEL[pendingStage] : ''
+        }」?此变更将记入审计日志。`}
+        confirmLabel="确认修改"
+        tone="primary"
+        onConfirm={performStageChange}
+        onCancel={() => {
+          setShowStageConfirm(false);
+          setPendingStage(null);
+        }}
       />
     </div>
   );
