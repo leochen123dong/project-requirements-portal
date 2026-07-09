@@ -8,6 +8,8 @@ import {
   canCompleteTask,
   canSyncITHub,
   canViewAdminDashboard,
+  canManageUsers,
+  canManageCustomFields,
   can,
 } from '../src/utils/rbac';
 import { ROLES, type Role } from '../src/types/contracts';
@@ -119,5 +121,35 @@ test.describe('rbac matrix (docs/ROLES.md source of truth)', () => {
     for (const role of ROLES) {
       expect(can(role, PAGE_PERMISSIONS.admin)).toBe(role === 'admin');
     }
+  });
+
+  // ── v0.2 (Phase D additions) ──────────────────────────────────────────
+  // Sources of truth:
+  //   - docs/ROLES.md (invite / update-role / delete = admin only)
+  //   - docs/ROLES.md (custom-field create/edit/delete = admin only)
+  // These mirror tests in src/utils/rbac.test.ts; running both is intentional
+  // so the matrix coverage stays consistent across the Vitest + Playwright
+  // executors (and any future refactor that splits test ownership).
+  test('canManageUsers is admin-only (every role × cell)', () => {
+    for (const role of ROLES) {
+      expect(canManageUsers(role), `canManageUsers(${role})`).toBe(role === 'admin');
+    }
+  });
+
+  test('canManageCustomFields is admin-only (every role × cell)', () => {
+    for (const role of ROLES) {
+      expect(canManageCustomFields(role), `canManageCustomFields(${role})`).toBe(
+        role === 'admin',
+      );
+    }
+  });
+
+  test('admin bypass: canManageUsers + canManageCustomFields return true for admin regardless of input list', () => {
+    // Sanity check — admin should always pass both helpers.
+    expect(canManageUsers('admin')).toBe(true);
+    expect(canManageCustomFields('admin')).toBe(true);
+    // And non-admins never do.
+    expect(canManageUsers('pm')).toBe(false);
+    expect(canManageCustomFields('pm')).toBe(false);
   });
 });

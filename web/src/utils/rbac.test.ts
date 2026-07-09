@@ -9,6 +9,8 @@ import {
   canCompleteTask,
   canSyncITHub,
   canViewAdminDashboard,
+  canManageUsers,
+  canManageCustomFields,
 } from './rbac';
 import { ROLES } from '../types/contracts';
 import type { Role } from '../types/contracts';
@@ -211,6 +213,56 @@ describe('action helpers — individual cells', () => {
     expect(canViewAdminDashboard('presales')).toBe(false);
     expect(canViewAdminDashboard('postsales')).toBe(false);
   });
+
+  it('canManageUsers → admin only', () => {
+    expect(canManageUsers('admin')).toBe(true);
+    expect(canManageUsers('presales')).toBe(false);
+    expect(canManageUsers('pm')).toBe(false);
+    expect(canManageUsers('delivery')).toBe(false);
+    expect(canManageUsers('postsales')).toBe(false);
+  });
+
+  it('canManageCustomFields → admin only', () => {
+    expect(canManageCustomFields('admin')).toBe(true);
+    expect(canManageCustomFields('presales')).toBe(false);
+    expect(canManageCustomFields('pm')).toBe(false);
+    expect(canManageCustomFields('delivery')).toBe(false);
+    expect(canManageCustomFields('postsales')).toBe(false);
+  });
+
+  it('admin universal-bypass: returns true even though helper only passes [admin] (admin still in list)', () => {
+    // The helpers hardcode ['admin'] in the allow-list. Verify the underlying
+    // can() still grants admin via the universal-bypass path — i.e. if admin
+    // was NOT in the allowed list, the helper would still return true.
+    expect(can('admin', [])).toBe(true);
+    expect(canManageUsers('admin')).toBe(can('admin', ['admin']));
+    expect(canManageCustomFields('admin')).toBe(can('admin', ['admin']));
+  });
+});
+
+describe('action helpers — v0.2 admin gates (Phase A/B)', () => {
+  // Mirror the ROLE_MATRIX entries added in Phase A/B per docs/ROLES.md.
+  // Both gates are admin-only and should return false for every other role.
+  const ACTION_MATRIX: Array<{
+    action: string;
+    helper: (r: Role) => boolean;
+  }> = [
+    { action: 'inviteUser', helper: canManageUsers },
+    { action: 'updateUserRole', helper: canManageUsers },
+    { action: 'deleteUser', helper: canManageUsers },
+    { action: 'createCustomField', helper: canManageCustomFields },
+    { action: 'editCustomField', helper: canManageCustomFields },
+    { action: 'deleteCustomField', helper: canManageCustomFields },
+  ];
+
+  for (const { action, helper } of ACTION_MATRIX) {
+    it(`${action} → false for every non-admin role`, () => {
+      for (const role of ROLES) {
+        const expected = role === 'admin';
+        expect(helper(role), `${action} × ${role}`).toBe(expected);
+      }
+    });
+  }
 });
 
 /**

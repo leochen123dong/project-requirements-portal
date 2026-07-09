@@ -12,6 +12,11 @@ import {
   AuditLogSchema,
   ITHubSyncLogSchema,
   HandoverRequest,
+  AdminUserActionSchema,
+  AdminUserRecordSchema,
+  FieldDefinitionSchema,
+  FieldValueSchema,
+  ChartDatumSchema,
 } from './contracts';
 
 const UUID = '11111111-1111-1111-1111-111111111111';
@@ -281,4 +286,352 @@ describe('all schemas — round-trip sanity', () => {
       expect(() => schema.parse(sample)).not.toThrow();
     });
   }
+});
+
+// ─── v0.2 — Admin user action contract (Phase A) ───────────────────────────
+// Discriminated union sent to the `admin-users` Edge Function. Every action
+// variant has a different payload — the discriminator is `action`.
+
+const VALID_ADMIN_USER_RECORD = {
+  id: UUID,
+  email: 'admin@demo.local',
+  display_name: '管理员',
+  role: 'admin' as const,
+  created_at: NOW,
+};
+
+describe('AdminUserActionSchema — list action', () => {
+  it('accepts { action: "list" } with no extra fields', () => {
+    expect(() => AdminUserActionSchema.parse({ action: 'list' })).not.toThrow();
+  });
+
+  it('parses the variant type correctly', () => {
+    const parsed = AdminUserActionSchema.parse({ action: 'list' });
+    expect(parsed.action).toBe('list');
+  });
+});
+
+describe('AdminUserActionSchema — invite action', () => {
+  it('accepts a full invite payload', () => {
+    const payload = {
+      action: 'invite' as const,
+      email: 'newuser@demo.local',
+      role: 'pm' as const,
+      display_name: '新用户',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+
+  it('accepts invite with optional password', () => {
+    const payload = {
+      action: 'invite' as const,
+      email: 'newuser@demo.local',
+      role: 'pm' as const,
+      display_name: '新用户',
+      password: 'plaintext-pass',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+
+  it('rejects an invalid email', () => {
+    const payload = {
+      action: 'invite',
+      email: 'not-an-email',
+      role: 'pm',
+      display_name: 'X',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).toThrow(z.ZodError);
+  });
+
+  it('rejects a too-short display_name', () => {
+    const payload = {
+      action: 'invite',
+      email: 'a@b.co',
+      role: 'pm',
+      display_name: '',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).toThrow(z.ZodError);
+  });
+
+  it('rejects unknown role', () => {
+    const payload = {
+      action: 'invite',
+      email: 'a@b.co',
+      role: 'superuser',
+      display_name: 'X',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).toThrow(z.ZodError);
+  });
+});
+
+describe('AdminUserActionSchema — update-role action', () => {
+  it('accepts a minimal update-role payload', () => {
+    const payload = {
+      action: 'update-role' as const,
+      user_id: UUID,
+      role: 'delivery' as const,
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+
+  it('accepts update-role with optional display_name', () => {
+    const payload = {
+      action: 'update-role' as const,
+      user_id: UUID,
+      role: 'postsales' as const,
+      display_name: '新名字',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+
+  it('rejects non-UUID user_id', () => {
+    const payload = {
+      action: 'update-role',
+      user_id: 'nope',
+      role: 'pm',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).toThrow(z.ZodError);
+  });
+});
+
+describe('AdminUserActionSchema — set-password action', () => {
+  it('accepts a valid set-password payload', () => {
+    const payload = {
+      action: 'set-password' as const,
+      user_id: UUID,
+      password: 'longerthan6',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+
+  it('rejects passwords shorter than 6 chars', () => {
+    const payload = {
+      action: 'set-password',
+      user_id: UUID,
+      password: '123',
+    };
+    expect(() => AdminUserActionSchema.parse(payload)).toThrow(z.ZodError);
+  });
+});
+
+describe('AdminUserActionSchema — delete action', () => {
+  it('accepts { action: "delete", user_id }', () => {
+    const payload = { action: 'delete' as const, user_id: UUID };
+    expect(() => AdminUserActionSchema.parse(payload)).not.toThrow();
+  });
+});
+
+describe('AdminUserActionSchema — unknown / malformed actions', () => {
+  it('rejects an unknown action string', () => {
+    expect(() =>
+      AdminUserActionSchema.parse({ action: 'ban-hammer', user_id: UUID }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a missing action field entirely', () => {
+    expect(() =>
+      AdminUserActionSchema.parse({ email: 'a@b.co', role: 'pm', display_name: 'X' }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+describe('AdminUserRecordSchema', () => {
+  it('accepts a fully-populated record', () => {
+    expect(() => AdminUserRecordSchema.parse(VALID_ADMIN_USER_RECORD)).not.toThrow();
+  });
+
+  it('documents that email is validated upstream (not enforced by Zod)', () => {
+    // AdminUserRecordSchema types `email: z.string()` — the Edge Function
+    // is the source of truth for email validation (it talks to Supabase auth).
+    // This test pins that behavior so a future "tighten" PR is deliberate.
+    expect(() =>
+      AdminUserRecordSchema.parse({ ...VALID_ADMIN_USER_RECORD, email: 'not an email' }),
+    ).not.toThrow();
+  });
+
+  it('rejects a non-UUID id', () => {
+    expect(() =>
+      AdminUserRecordSchema.parse({ ...VALID_ADMIN_USER_RECORD, id: 'xx' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects an unknown role', () => {
+    expect(() =>
+      AdminUserRecordSchema.parse({ ...VALID_ADMIN_USER_RECORD, role: 'superadmin' }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── v0.2 — Custom field schemas (Phase B) ─────────────────────────────────
+// The `name` regex is critical: it MUST match the SQL CHECK constraint
+// `^[a-z][a-z0-9_]*$` byte-for-byte. If it diverges, the SQL insert will
+// pass but Zod will reject on read-back, causing phantom validation bugs.
+
+const VALID_FIELD_DEFINITION = {
+  id: UUID,
+  name: 'industry',
+  label: '行业',
+  type: 'text' as const,
+  options: null,
+  required: true,
+  display_order: 0,
+  is_active: true,
+  created_at: NOW,
+};
+
+describe('FieldDefinitionSchema — snake_case name regex', () => {
+  it('accepts a fully populated definition', () => {
+    expect(() => FieldDefinitionSchema.parse(VALID_FIELD_DEFINITION)).not.toThrow();
+  });
+
+  it('accepts lowercase + digits + underscores', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, name: 'expected_close_date_v2' }),
+    ).not.toThrow();
+  });
+
+  it('rejects uppercase letter in name', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, name: 'Industry' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects hyphen in name', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, name: 'expected-date' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects digit-start name (must begin with [a-z])', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, name: '1st_followup' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects empty name', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, name: '' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects names longer than 40 chars (matches SQL varchar(40))', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({
+        ...VALID_FIELD_DEFINITION,
+        name: 'a'.repeat(41),
+      }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects an unknown FieldType', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, type: 'boolean' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('accepts all 4 valid field types', () => {
+    for (const t of ['text', 'number', 'date', 'select']) {
+      expect(() =>
+        FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, type: t }),
+      ).not.toThrow();
+    }
+  });
+
+  it('accepts null options (JSONB semantics)', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({ ...VALID_FIELD_DEFINITION, options: null }),
+    ).not.toThrow();
+  });
+
+  it('accepts a string array of options for select type', () => {
+    expect(() =>
+      FieldDefinitionSchema.parse({
+        ...VALID_FIELD_DEFINITION,
+        type: 'select',
+        options: ['金融', '制造', '互联网'],
+      }),
+    ).not.toThrow();
+  });
+});
+
+const VALID_FIELD_VALUE = {
+  opportunity_id: UUID,
+  field_id: UUID,
+  value: '银行业',
+};
+
+describe('FieldValueSchema', () => {
+  it('accepts a populated value', () => {
+    expect(() => FieldValueSchema.parse(VALID_FIELD_VALUE)).not.toThrow();
+  });
+
+  it('accepts null value (no value yet or explicitly cleared)', () => {
+    expect(() =>
+      FieldValueSchema.parse({ ...VALID_FIELD_VALUE, value: null }),
+    ).not.toThrow();
+  });
+
+  it('accepts empty-string value', () => {
+    expect(() =>
+      FieldValueSchema.parse({ ...VALID_FIELD_VALUE, value: '' }),
+    ).not.toThrow();
+  });
+
+  it('rejects non-UUID opportunity_id', () => {
+    expect(() =>
+      FieldValueSchema.parse({ ...VALID_FIELD_VALUE, opportunity_id: 'bad' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects non-UUID field_id', () => {
+    expect(() =>
+      FieldValueSchema.parse({ ...VALID_FIELD_VALUE, field_id: 'bad' }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── v0.2 — Chart datum schema (Phase C) ───────────────────────────────────
+// Used by DonutChart / BarChart. `value` is `z.number()` (no min(0) — that
+// would forbid SLA "remaining" gauges in the future), so the schema allows
+// negative numbers — we don't test for rejection there.
+
+describe('ChartDatumSchema', () => {
+  it('accepts a label + numeric value', () => {
+    expect(() =>
+      ChartDatumSchema.parse({ label: '已立项', value: 12 }),
+    ).not.toThrow();
+  });
+
+  it('accepts zero', () => {
+    expect(() =>
+      ChartDatumSchema.parse({ label: '已关闭', value: 0 }),
+    ).not.toThrow();
+  });
+
+  it('accepts negative value (current schema is z.number())', () => {
+    // Documenting the intentional behavior — ChartDatumSchema does NOT
+    // enforce non-negative values. If a future chart needs that, add `.min(0)`
+    // and update this test to expect rejection instead.
+    expect(() =>
+      ChartDatumSchema.parse({ label: 'delta', value: -3 }),
+    ).not.toThrow();
+  });
+
+  it('accepts fractional values (Recharts formats decimals)', () => {
+    expect(() =>
+      ChartDatumSchema.parse({ label: 'avg', value: 4.5 }),
+    ).not.toThrow();
+  });
+
+  it('rejects a non-string label', () => {
+    expect(() =>
+      ChartDatumSchema.parse({ label: 5, value: 1 }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a non-numeric value', () => {
+    expect(() =>
+      ChartDatumSchema.parse({ label: 'x', value: 'ten' }),
+    ).toThrow(z.ZodError);
+  });
 });
