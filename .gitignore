@@ -40,6 +40,10 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Symlinked web/node_modules so the e2e specs can resolve @playwright/test
+# without a second install.
+e2e/node_modules
+
 # Misc
 .cache/
 .parcel-cache/

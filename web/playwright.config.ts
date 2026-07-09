@@ -1,24 +1,47 @@
 /**
- * Playwright config — Phase 0 stub.
- * Phase 3 tester will flesh this out:
- *  - start `npm run preview` on port 4173 as webServer
- *  - default `baseURL: http://localhost:4173`
- *  - projects for chromium / firefox / webkit
- *  - reuse the supabase mock env when secrets aren't available
+ * Playwright config — Phase 3 (tester agent).
+ *
+ *  - E2E tests run against the production build (`npm run preview` on 4173).
+ *  - Single project (chromium) for fast CI; can extend to firefox/webkit later.
+ *  - Sequential workers in CI to avoid port conflicts.
+ *  - Server is auto-started by Playwright; reuse when developing locally.
  */
 
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+
+const PORT = 4173;
+const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
+const CI = !!process.env.CI;
 
 export default defineConfig({
   testDir: '../e2e',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'list',
-  use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:4173',
-    trace: 'on-first-retry',
+  fullyParallel: !CI,
+  forbidOnly: CI,
+  retries: CI ? 2 : 0,
+  workers: CI ? 1 : undefined,
+  reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  timeout: 30_000,
+  expect: {
+    timeout: 5_000,
   },
-  // Phase 3 will add: webServer: { command: 'npm run preview', port: 4173 }
+  use: {
+    baseURL: BASE_URL,
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  webServer: {
+    command: 'npm run preview -- --port ' + PORT + ' --strictPort',
+    port: PORT,
+    reuseExistingServer: !CI,
+    timeout: 60_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  },
 });

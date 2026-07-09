@@ -10,7 +10,10 @@
     "lint": "eslint . --ext ts,tsx --max-warnings 0",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:list": "playwright test --list",
+    "e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -23,6 +26,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.47.0",
     "@types/node": "^26.1.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
