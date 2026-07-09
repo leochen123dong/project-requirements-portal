@@ -160,29 +160,36 @@ begin
 end $$;
 
 -- Add tables idempotently. pg_publication_rel has no IF NOT EXISTS for the
--- add, so we wrap each in a check.
+-- add, so we wrap each in a check. NOTE: pg_publication_rel has no
+-- `pubname` column — we must JOIN pg_publication on oid/prpubid.
 do $$
 begin
   if not exists (
-    select 1 from pg_publication_rel
-    where pubname = 'supabase_realtime'
-      and relid = 'public.milestones'::regclass
+    select 1
+    from pg_publication_rel r
+    join pg_publication p on p.oid = r.prpubid
+    where p.pubname = 'supabase_realtime'
+      and r.prrelid = 'public.milestones'::regclass
   ) then
     alter publication supabase_realtime add table public.milestones;
   end if;
 
   if not exists (
-    select 1 from pg_publication_rel
-    where pubname = 'supabase_realtime'
-      and relid = 'public.tasks'::regclass
+    select 1
+    from pg_publication_rel r
+    join pg_publication p on p.oid = r.prpubid
+    where p.pubname = 'supabase_realtime'
+      and r.prrelid = 'public.tasks'::regclass
   ) then
     alter publication supabase_realtime add table public.tasks;
   end if;
 
   if not exists (
-    select 1 from pg_publication_rel
-    where pubname = 'supabase_realtime'
-      and relid = 'public.comments'::regclass
+    select 1
+    from pg_publication_rel r
+    join pg_publication p on p.oid = r.prpubid
+    where p.pubname = 'supabase_realtime'
+      and r.prrelid = 'public.comments'::regclass
   ) then
     alter publication supabase_realtime add table public.comments;
   end if;
