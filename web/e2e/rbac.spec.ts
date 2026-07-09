@@ -9,8 +9,8 @@ import {
   canSyncITHub,
   canViewAdminDashboard,
   can,
-} from '../web/src/utils/rbac';
-import { ROLES, type Role } from '../web/src/types/contracts';
+} from '../src/utils/rbac';
+import { ROLES, type Role } from '../src/types/contracts';
 
 /**
  * Pure-Node RBAC validation — the matrix from docs/ROLES.md checked against
