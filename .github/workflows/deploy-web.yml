@@ -29,7 +29,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: web
-        run: npm ci --no-audit --no-fund --loglevel=verbose 2>&1 | tail -100
+        run: npm ci --no-audit --no-fund
 
       - name: Typecheck
         working-directory: web
