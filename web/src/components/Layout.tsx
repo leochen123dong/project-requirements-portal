@@ -2,6 +2,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../api/supabase';
 import { can, type Role } from '../utils/rbac';
+import ToastContainer from './ToastContainer';
+import RoleChip from './RoleChip';
 
 /**
  * Top-level authenticated layout.
@@ -53,8 +55,9 @@ export default function Layout() {
           {session ? (
             <>
               <span className="topnav-username">
-                {profile?.display_name ?? session.user.email} · {role}
+                {profile?.display_name ?? session.user.email}
               </span>
+              {profile ? <RoleChip role={profile.role} /> : null}
               <button className="btn btn-sm btn-ghost" onClick={handleSignOut}>
                 登出
               </button>
@@ -67,6 +70,7 @@ export default function Layout() {
       <main>
         <Outlet />
       </main>
+      <ToastContainer />
     </div>
   );
 }
