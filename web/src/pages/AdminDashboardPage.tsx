@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/authStore';
-import { canViewAdminDashboard } from '../utils/rbac';
+import { canManageUsers, canViewAdminDashboard } from '../utils/rbac';
 import type { AuditLog, ITHubSyncLog, Milestone, Project, Task } from '../types/contracts';
 import KpiTile from '../components/KpiTile';
 import EmptyState from '../components/EmptyState';
@@ -157,6 +158,16 @@ export default function AdminDashboardPage() {
           hint="open tasks / assignees"
         />
       </div>
+
+      {canManageUsers(role as 'admin') && (
+        <div className="grid-cards" style={{ marginBottom: 24 }}>
+          <Link to="/admin/users" className="tile">
+            <div className="tile-icon">👥</div>
+            <h3 className="tile-title">用户管理</h3>
+            <p className="tile-desc">邀请、修改角色、删除用户</p>
+          </Link>
+        </div>
+      )}
 
       <div className="grid-cards" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 24 }}>
         <div className="card">
