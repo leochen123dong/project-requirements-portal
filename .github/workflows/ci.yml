@@ -39,7 +39,7 @@ jobs:
   # mock-mode UI on a clean CI box).
   e2e:
     needs: lint-and-test
-    if: ${{ secrets.E2E_SUPABASE_URL != '' && secrets.E2E_SUPABASE_ANON_KEY != '' }}
+    if: ${{ secrets.E2E_SUPABASE_URL && secrets.E2E_SUPABASE_ANON_KEY }}
     runs-on: ubuntu-latest
     defaults:
       run:
