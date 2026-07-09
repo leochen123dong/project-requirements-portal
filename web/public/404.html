@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>跳转中...</title>
+    <script>
+      // GitHub Pages SPA fallback: redirect any deep link to index.html using
+      // the hash router so the SPA can pick up the path.
+      // Adapted from https://github.com/rafgraph/spa-github-pages
+      (function () {
+        var l = window.location;
+        var path = l.pathname.replace(/index\.html$/, '');
+        var query = l.search || '';
+        // Strip repo name prefix when served from project page (best effort)
+        l.replace(
+          l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+          path +
+          (query ? query : '') +
+          l.hash
+        );
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

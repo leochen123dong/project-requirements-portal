@@ -1,0 +1,54 @@
+# Supabase CLI config — Phase 0 stub.
+# Phase 1 backend-dev will flesh out:
+#   - project_id (after `supabase link`)
+#   - api.port / db.port / studio.port
+#   - [db.migrations] version = "0001" ...
+#   - [functions.<name>] verify_jwt = true
+
+project_id = "project-requirements-portal"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:4173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false  # set true in production
+secure_password_change = true
+
+[realtime]
+enabled = true
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[edge_runtime]
+enabled = true
+
+[functions.ithub-sync]
+verify_jwt = true
+
+[functions.ithub-push]
+verify_jwt = true

@@ -1,0 +1,44 @@
+# CI: lint + typecheck + unit tests on every PR / push to main.
+# E2E is intentionally NOT in this workflow — Phase 3 will add an `e2e` job
+# gated on Supabase test-project secrets.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # Phase 3 will add:
+      # - run: npm run build
+      # - run: npm run preview &
+      # - run: npx playwright install --with-deps chromium
+      # - run: npm run e2e
+      # env:
+      #   E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      #   E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}

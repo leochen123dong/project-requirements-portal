@@ -1,0 +1,31 @@
+-- Phase 0 stub. Phase 1 backend-dev will replace with real seed data:
+--   4 demo users (presales / pm / delivery / postsales) + 2 opportunities
+--   + 1 project + 3 milestones + 5 tasks.
+--
+-- Usage:
+--   1. Create the 4 demo users in Supabase Dashboard → Authentication → Users
+--      (note each user's UUID).
+--   2. Replace the UUIDs below with the real ones.
+--   3. Run this in Supabase SQL Editor (or `psql -f supabase/seed.sql`).
+--
+-- The auth.users rows are referenced by `profiles.id`; the seed creates the
+-- profile rows that link to them.
+
+-- ─── Demo accounts ──────────────────────────────────────────────────────────
+-- Replace these UUIDs with the actual auth.users IDs created in step 1.
+-- DO NOT use these UUIDs in production.
+
+-- insert into public.profiles (id, display_name, role) values
+--   ('11111111-1111-1111-1111-111111111111', '王售前', 'presales'),
+--   ('22222222-2222-2222-2222-222222222222', '李项目经理', 'pm'),
+--   ('33333333-3333-3333-3333-333333333333', '张交付', 'delivery'),
+--   ('44444444-4444-4444-4444-444444444444', '赵售后', 'postsales'),
+--   ('55555555-5555-5555-5555-555555555555', '管理员', 'admin');
+
+-- ─── Demo data ──────────────────────────────────────────────────────────────
+-- Phase 1 backend-dev will populate:
+--   opportunities: 2 rows (one in 'proposal', one in 'won')
+--   projects: 1 row (handover of the 'won' opportunity)
+--   milestones: 3 rows (kickoff / design / delivery)
+--   tasks: 5 rows (one per milestone + 2 extras)
+--   ithub_tickets: 3 mock rows so TicketsPage renders without API call
