@@ -167,3 +167,76 @@ export const HandoverRequest = z.object({
   artifacts: z.array(ArtifactTypeEnum).min(5), // 5 必备交付物
 });
 export type HandoverRequest = z.infer<typeof HandoverRequest>;
+
+// ─── Admin: Edge Function action contract ────────────────────────────────────
+// Sent to supabase.functions.invoke('admin-users', { body: ... }).
+// The action discriminates; subsequent fields vary by action.
+
+export const AdminUserActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('list') }),
+  z.object({
+    action: z.literal('invite'),
+    email: z.string().email(),
+    role: RoleEnum,
+    display_name: z.string().min(1).max(80),
+    password: z.string().min(6).optional(), // if absent, send magic link
+  }),
+  z.object({
+    action: z.literal('update-role'),
+    user_id: z.string().uuid(),
+    role: RoleEnum,
+    display_name: z.string().min(1).max(80).optional(),
+  }),
+  z.object({
+    action: z.literal('set-password'),
+    user_id: z.string().uuid(),
+    password: z.string().min(6),
+  }),
+  z.object({
+    action: z.literal('delete'),
+    user_id: z.string().uuid(),
+  }),
+]);
+export type AdminUserAction = z.infer<typeof AdminUserActionSchema>;
+
+export const AdminUserRecordSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  display_name: z.string(),
+  role: RoleEnum,
+  created_at: z.string(),
+});
+export type AdminUserRecord = z.infer<typeof AdminUserRecordSchema>;
+
+// ─── Custom fields (opportunity_field_definitions + values) ────────────────
+
+export const FieldTypeEnum = z.enum(['text', 'number', 'date', 'select']);
+export type FieldType = z.infer<typeof FieldTypeEnum>;
+
+export const FieldDefinitionSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(40), // machine name, snake_case recommended
+  label: z.string().min(1).max(80), // human label
+  type: FieldTypeEnum,
+  options: z.array(z.string()).nullable(), // required when type='select'
+  required: z.boolean(),
+  display_order: z.number().int(),
+  is_active: z.boolean(),
+  created_at: z.string().optional(),
+});
+export type FieldDefinition = z.infer<typeof FieldDefinitionSchema>;
+
+export const FieldValueSchema = z.object({
+  opportunity_id: z.string().uuid(),
+  field_id: z.string().uuid(),
+  value: z.string().nullable(), // everything stored as text; UI casts by type
+});
+export type FieldValue = z.infer<typeof FieldValueSchema>;
+
+// ─── Chart data shapes (used by DonutChart / BarChart components) ───────────
+
+export const ChartDatumSchema = z.object({
+  label: z.string(),
+  value: z.number(),
+});
+export type ChartDatum = z.infer<typeof ChartDatumSchema>;

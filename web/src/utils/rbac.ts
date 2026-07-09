@@ -33,3 +33,7 @@ export const canAssignTask = (r: Role) => can(r, ['pm', 'delivery', 'admin']);
 export const canCompleteTask = (r: Role) => can(r, ['delivery', 'pm', 'admin']);
 export const canSyncITHub = (r: Role) => can(r, ['postsales', 'admin']);
 export const canViewAdminDashboard = (r: Role) => can(r, ['admin']);
+
+// v0.2 additions
+export const canManageUsers = (r: Role) => can(r, ['admin']);
+export const canManageCustomFields = (r: Role) => can(r, ['admin']);

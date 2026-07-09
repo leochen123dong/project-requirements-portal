@@ -39,6 +39,15 @@
 
   --nav-height: 60px;
   --container-max: 1200px;
+
+  /* v0.2: Chart palette — derived from brand colors for consistent visual identity.
+     Use these CSS vars in DonutChart / BarChart instead of hex values. */
+  --chart-1: #2B6CB0; /* brand primary */
+  --chart-2: #ED8936; /* brand accent */
+  --chart-3: #38A169; /* success */
+  --chart-4: #DD6B20; /* warning */
+  --chart-5: #3182CE; /* info */
+  --chart-6: #805AD5; /* purple (extension) */
 }
 
 * { box-sizing: border-box; }
