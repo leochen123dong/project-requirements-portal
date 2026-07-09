@@ -118,3 +118,23 @@ npm run e2e
 ## License
 
 MIT
+
+---
+
+## v0.1.0 Release Notes
+
+首个可部署版本(2026-07-09)。**自动化 4 人 agent 团队协作产出**(PM + frontend + backend + tester)。
+
+- ✅ 8 个页面 + 14 个共享组件 + 17 单测文件(136 tests)+ 5 E2E 文件(16 passed, 2 Supabase-gated skip)
+- ✅ 完整数据层:10 张表 + RLS + triggers + audit log
+- ✅ 2 个 Edge Functions(Deno)代理 ITHub,带 MOCK 模式
+- ✅ GitHub Pages + Supabase 零本地依赖部署
+- ✅ CI:lint + typecheck + 单测 + E2E(Supabase secrets 触发)
+
+**已验证**:`npm run build`(0.4s, 274 kB JS)+ `npm test`(461ms)+ `npm run e2e`(1.8s)。
+
+**待用户提供**才可跑通完整 8 条 Demo 故事线:
+- Supabase 项目 URL + anon key(secrets 设到 GitHub)
+- 可选:ITHub API 实例(否则 `VITE_ITHUB_MOCK=true` 走 mock)
+
+完整变更见 [`CHANGELOG.md`](CHANGELOG.md)。

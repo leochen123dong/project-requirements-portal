@@ -1,0 +1,94 @@
+# Changelog
+
+所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+## [v0.1.0] - 2026-07-09
+
+首个可发布版本。从空仓库到完整可部署项目的 4 个 Phase 协作产出。
+
+### ✨ 新功能
+
+**售前 → 立项**
+- 商机列表 + 阶段筛选(线索 / 已验证 / 方案中 / 谈判中 / 成交 / 丢单)
+- 商机详情 + 5 个交付物(HT-JL-01/02/03-1, SOW, Contract)上传清单
+- 立项交接流程(选择 PM → 自动创建项目 → 跳转项目详情)
+- presales / admin 角色 gate
+
+**交付与里程碑**
+- 项目列表 + 状态筛选(initiated / in_progress / accepted / closed)
+- 项目详情:里程碑时间轴(状态色:已完成 = 绿 / 进行中 = 蓝 / 阻塞 = 红)+ 任务清单(可勾选 / 派单)+ 评论(Supabase Realtime 实时同步)
+- ArtifactUploader:文件上传到 Supabase Storage `artifacts` bucket
+- pm / delivery / postsales 角色 gate
+
+**售后 SLA**
+- 工单列表(来自 ITHub,带 SLA 倒计时):红 < 4h / 橙 < 24h / 绿 > 24h
+- 手动同步按钮 → 调 Edge Function 拉取最新工单
+- "在 ITHub 中打开" 链接(`ithubTicketUrl` helper)
+- mock 模式:`VITE_ITHUB_MOCK=true` 时显示 3 条假工单(无需 ITHub 实例)
+
+**管理仪表盘**
+- 4 个 KPI:进行中项目 / 超期任务 / 本周即将到期里程碑 / 人均负载
+- ITHub 最近同步时间 + 拉取条数
+- 最近活动流(`audit_log` 最近 10 条)
+- admin 角色 gate
+
+**认证**
+- 邮箱魔法链接登录(Supabase Auth `signInWithOtp`)
+- 5 角色权限矩阵(presales / pm / delivery / postsales / admin)
+- 自动创建 profile 行(auth.users trigger)
+- 角色变更防越权:profile.role 仅 admin / service_role 可改
+
+### 🏗️ 架构
+
+- **前端**:React 18 + TypeScript + Vite + HashRouter(GitHub Pages SPA 兼容)
+- **状态**:Zustand(auth + ui,带 persist 中间件)
+- **数据**:@supabase/supabase-js v2(强类型 Database)
+- **后端**:Supabase(Postgres 15 + RLS + Auth + Realtime + Storage + Edge Functions)
+- **ITHub 集成**:Edge Function (Deno) 代理,API Key 服务端持有
+- **样式**:原生 CSS + 设计 token(从 ITHub Portal Demo 复用)
+
+### 📦 部署
+
+- GitHub Actions:推 main → 自动 build → 部署到 GitHub Pages
+- 零本地依赖:用户只需 fork + 配置 Supabase + 填 secrets
+- Supabase CLI:迁移 / Edge Functions 一键部署
+- `scripts/bootstrap.sh` 引导脚本(打印 6 步操作)
+
+### 🧪 测试
+
+- **136 单测**(Vitest)全绿:
+  - rbac.ts:81 tests(覆盖 5 角色 × 所有操作的矩阵)
+  - contracts.ts:41 tests(Zod schema round-trip)
+  - authStore:7 tests(persist 中间件)
+  - ithub.ts:7 tests(URL helper + mock data shape)
+- **16 E2E**(Playwright + Chromium)全绿:
+  - 认证 / 导航 / RBAC / ITHub mock / 路由 gate
+  - 2 个 Supabase-gated 测试在 secrets 缺失时优雅跳过
+- **CI**:lint-and-test job + e2e job(secrets 触发)
+- 总耗时:单测 461ms,E2E 1.8s
+
+### 📚 文档
+
+- `README.md` — 5 分钟部署 + 架构图 + 角色矩阵
+- `CLAUDE.md` — Claude Code 项目指引(命令 / 架构 / 复用资源 / 扩展点)
+- `docs/ARCHITECTURE.md` — 详细数据模型 + 模块边界 + 数据流
+- `docs/DEPLOY.md` — 部署步骤 + 故障排查 + 升级 + 回滚
+- `docs/ROLES.md` — 5 角色业务说明 + 操作权限矩阵
+- `docs/adr/0001-supabase.md` — 为什么选 Supabase(Firebase / Render / 纯静态对比)
+- `scripts/bootstrap.sh` — 6 步引导脚本
+
+### 🔧 待补 / 已知限制
+
+需要用户提供 Supabase 项目 + 可选 ITHub 凭证才能跑通完整故事线。代码已就位:
+- Supabase migrations SQL:`supabase/migrations/{0001_init, 0002_rls, 0003_triggers}.sql`
+- ITHub Edge Functions:`supabase/functions/{ithub-sync, ithub-push}/index.ts`
+- Demo 数据:`supabase/seed.sql`(5 profiles / 2 opportunities / 1 project / 3 milestones / 5 tasks / 3 tickets)
+
+详见 README 的 "5 分钟部署" 章节与 `docs/DEPLOY.md`。
+
+### 📈 度量
+
+- 源码文件:67(含 14 组件 + 8 页面 + 4 单测 + 5 E2E)
+- 构建产物:274 kB JS (gzip 85 kB) + 10 kB CSS
+- 首次构建时间:0.4s(134 modules transformed)
+- 5 个 git commits:`phase-0` → `phase-3`
