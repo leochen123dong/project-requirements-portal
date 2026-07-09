@@ -1,7 +1,7 @@
 {
   "nodeModulesDir": "auto",
   "tasks": {
-    "check": "deno check itHub-sync/index.ts itHub-push/index.ts"
+    "check": "deno check admin-users/index.ts ithub-sync/index.ts ithub-push/index.ts"
   },
   "imports": {
     "npm:@supabase/supabase-js@2.45.0": "npm:@supabase/supabase-js@2.45.0"
