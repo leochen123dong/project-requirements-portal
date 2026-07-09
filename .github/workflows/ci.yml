@@ -28,7 +28,7 @@ jobs:
         working-directory: web
         run: python3 scripts/strip-empty-versions.py
 
-      - run: npm ci --no-audit --no-fund
+      - run: npm install --no-audit --no-fund --prefer-offline
 
       - name: Typecheck
         run: npm run typecheck
@@ -60,7 +60,7 @@ jobs:
         working-directory: web
         run: python3 scripts/strip-empty-versions.py
 
-      - run: npm ci --no-audit --no-fund
+      - run: npm install --no-audit --no-fund --prefer-offline
 
       - name: Build production bundle
         run: npm run build
