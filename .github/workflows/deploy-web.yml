@@ -27,6 +27,10 @@ jobs:
         with:
           node-version: 24
 
+      - name: Strip empty-version entries from lock
+        working-directory: web
+        run: python3 scripts/strip-empty-versions.py
+
       - name: Install dependencies
         working-directory: web
         run: npm install --no-audit --no-fund
