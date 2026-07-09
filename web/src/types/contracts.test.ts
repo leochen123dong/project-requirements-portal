@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   ProfileSchema,
   OpportunitySchema,
+  OpportunityStageEnum,
   ProjectSchema,
   MilestoneSchema,
   TaskSchema,
@@ -131,6 +132,39 @@ describe('OpportunitySchema', () => {
 
   it('accepts null amount (nullable)', () => {
     expect(() => OpportunitySchema.parse({ ...validOpportunity, amount: null })).not.toThrow();
+  });
+});
+
+// v0.3 Phase D — stage enum coverage. The 修改阶段 dropdown in
+// OpportunityDetailPage renders options from this exact enum (the page hard-
+// codes the literal list, but the schema is the source of truth). If a future
+// refactor adds/removes a stage in the schema without updating the dropdown
+// (or vice-versa), this test pins the schema side of that contract.
+describe('OpportunityStageEnum', () => {
+  it('exposes exactly the 6 stages documented in the plan (lead → lost)', () => {
+    expect(OpportunityStageEnum.options).toEqual([
+      'lead',
+      'qualified',
+      'proposal',
+      'negotiation',
+      'won',
+      'lost',
+    ]);
+  });
+
+  it('accepts every documented stage value', () => {
+    for (const stage of OpportunityStageEnum.options) {
+      expect(() => OpportunityStageEnum.parse(stage)).not.toThrow();
+    }
+  });
+
+  it('rejects an unknown stage string', () => {
+    expect(() => OpportunityStageEnum.parse('frozen')).toThrow(z.ZodError);
+  });
+
+  it('is case-sensitive (lowercase only — matches SQL CHECK)', () => {
+    expect(() => OpportunityStageEnum.parse('Lead')).toThrow(z.ZodError);
+    expect(() => OpportunityStageEnum.parse('WON')).toThrow(z.ZodError);
   });
 });
 

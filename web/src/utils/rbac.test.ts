@@ -47,6 +47,13 @@ const ROLE_MATRIX: Array<{
     roles: { presales: true, pm: false, delivery: false, postsales: false, admin: true },
   },
   {
+    // v0.3 Phase A — stage change / opportunity UPDATE gate. Same matrix cell
+    // as create/edit/handover (presales + admin only) but a distinct helper so
+    // page-level gating can name the operation precisely.
+    action: 'updateOpportunity',
+    roles: { presales: true, pm: false, delivery: false, postsales: false, admin: true },
+  },
+  {
     action: 'editProject',
     roles: { presales: false, pm: true, delivery: false, postsales: false, admin: true },
   },
@@ -280,6 +287,7 @@ describe('docs/ROLES.md matrix coverage', () => {
     createOpportunity: canCreateOpportunity,
     editOpportunity: canHandoverOpportunity, // same matrix cell as create
     handoverOpportunity: canHandoverOpportunity,
+    updateOpportunity: canUpdateOpportunity, // v0.3 Phase A — stage change gate
     editProject: canEditProject,
     viewProject: (r) => can(r, ['presales', 'pm', 'delivery', 'postsales', 'admin']),
     editMilestone: canEditProject, // same matrix cell
