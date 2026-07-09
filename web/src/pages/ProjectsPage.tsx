@@ -7,6 +7,8 @@ import { useToast } from '../hooks/useToast';
 import { useRole } from '../hooks/useRole';
 import type { Project, ProjectStatus } from '../types/contracts';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
+import ChartCard from '../components/ChartCard';
+import BarChart from '../components/BarChart';
 import EmptyState from '../components/EmptyState';
 
 const STATUSES: (ProjectStatus | 'all')[] = ['all', 'initiated', 'in_progress', 'accepted', 'closed'];
@@ -118,6 +120,26 @@ export default function ProjectsPage() {
             当前角色 {role} · 共 {all.length} 个
           </p>
         </div>
+      </div>
+
+      {/* Phase C: status distribution chart */}
+      <div style={{ marginBottom: 24 }}>
+        <ChartCard
+          title="项目状态分布"
+          subtitle="按 status 聚合"
+          loading={loading}
+          empty={all.length === 0}
+          emptyText="暂无项目数据"
+        >
+          <BarChart
+            data={(
+              ['initiated', 'in_progress', 'accepted', 'closed'] as ProjectStatus[]
+            ).map((s) => ({
+              label: STATUS_LABEL[s],
+              value: all.filter((p) => p.status === s).length,
+            }))}
+          />
+        </ChartCard>
       </div>
 
       <div

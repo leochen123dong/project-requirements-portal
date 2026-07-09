@@ -17,6 +17,8 @@ import type {
 } from '../types/contracts';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import Modal from '../components/Modal';
+import ChartCard from '../components/ChartCard';
+import BarChart from '../components/BarChart';
 import EmptyState from '../components/EmptyState';
 
 type OppRow = Database['public']['Tables']['opportunities']['Row'];
@@ -324,6 +326,24 @@ export default function OpportunitiesPage() {
             新建商机
           </button>
         )}
+      </div>
+
+      {/* Phase C: stage distribution chart */}
+      <div style={{ marginBottom: 24 }}>
+        <ChartCard
+          title="商机阶段分布"
+          subtitle="按 stage 聚合"
+          loading={loading}
+          empty={allOpps.length === 0}
+          emptyText="暂无商机数据"
+        >
+          <BarChart
+            data={STAGES.map((s) => ({
+              label: STAGE_LABEL[s],
+              value: allOpps.filter((o) => o.stage === s).length,
+            }))}
+          />
+        </ChartCard>
       </div>
 
       <div

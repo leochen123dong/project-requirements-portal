@@ -5,8 +5,19 @@ import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/authStore';
 import { canManageCustomFields, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
-import type { AuditLog, ITHubSyncLog, Milestone, Project, Task } from '../types/contracts';
+import type {
+  AuditLog,
+  ChartDatum,
+  ITHubSyncLog,
+  Milestone,
+  OpportunityStage,
+  Project,
+  ProjectStatus,
+  Task,
+} from '../types/contracts';
 import KpiTile from '../components/KpiTile';
+import ChartCard from '../components/ChartCard';
+import DonutChart from '../components/DonutChart';
 import EmptyState from '../components/EmptyState';
 
 interface DashStats {
@@ -16,10 +27,35 @@ interface DashStats {
   avgLoad: number;
 }
 
+const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
+  initiated: '已立项',
+  in_progress: '交付中',
+  accepted: '已验收',
+  closed: '已关闭',
+};
+const PROJECT_STATUS_ORDER: ProjectStatus[] = ['initiated', 'in_progress', 'accepted', 'closed'];
+
+const OPPORTUNITY_STAGE_LABEL: Record<OpportunityStage, string> = {
+  lead: '线索',
+  qualified: '已验证',
+  proposal: '方案中',
+  negotiation: '谈判中',
+  won: '成交',
+  lost: '丢单',
+};
+const OPPORTUNITY_STAGE_ORDER: OpportunityStage[] = [
+  'lead',
+  'qualified',
+  'proposal',
+  'negotiation',
+  'won',
+  'lost',
+];
+
 /**
- * Admin dashboard: 4 KPI tiles + last sync time + recent activity.
- * Visible to admin only — Layout's tab gate enforces this, but we also
- * `can()`-check here for direct URL access.
+ * Admin dashboard: 4 KPI tiles + 2 distribution donut charts + last sync time
+ * + recent activity. Visible to admin only — Layout's tab gate enforces this,
+ * but we also `can()`-check here for direct URL access.
  */
 export default function AdminDashboardPage() {
   const role = useAuthStore((s) => s.profile?.role ?? 'guest');
@@ -37,13 +73,20 @@ export default function AdminDashboardPage() {
   const [lastSync, setLastSync] = useState<ITHubSyncLog | null>(null);
   const [activity, setActivity] = useState<AuditLog[]>([]);
 
+  // Chart data — loaded once with the rest of the dashboard.
+  const [projectStatusData, setProjectStatusData] = useState<ChartDatum[]>([]);
+  const [oppStageData, setOppStageData] = useState<ChartDatum[]>([]);
+  const [chartsLoading, setChartsLoading] = useState(true);
+
   useEffect(() => {
     if (!client) {
       setLoading(false);
+      setChartsLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setChartsLoading(true);
     (async () => {
       try {
         const today = new Date();
@@ -51,19 +94,23 @@ export default function AdminDashboardPage() {
         const isoToday = today.toISOString().slice(0, 10);
         const isoInAWeek = inAWeek.toISOString().slice(0, 10);
 
-        const [projRes, overdueRes, upcomingRes, tasksRes, syncRes, auditRes] = await Promise.all([
-          client.from('projects').select('*').eq('status', 'in_progress'),
-          client.from('tasks').select('*').eq('done', false).lt('due_date', isoToday),
-          client.from('milestones').select('*').gte('due_date', isoToday).lte('due_date', isoInAWeek),
-          client.from('tasks').select('*'),
-          client
-            .from('ithub_sync_log')
-            .select('*')
-            .order('ran_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          client.from('audit_log').select('*').order('at', { ascending: false }).limit(10),
-        ]);
+        const [projRes, overdueRes, upcomingRes, tasksRes, syncRes, auditRes, allProjsRes, allOppsRes] =
+          await Promise.all([
+            client.from('projects').select('*').eq('status', 'in_progress'),
+            client.from('tasks').select('*').eq('done', false).lt('due_date', isoToday),
+            client.from('milestones').select('*').gte('due_date', isoToday).lte('due_date', isoInAWeek),
+            client.from('tasks').select('*'),
+            client
+              .from('ithub_sync_log')
+              .select('*')
+              .order('ran_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            client.from('audit_log').select('*').order('at', { ascending: false }).limit(10),
+            // For charts — only the columns we need.
+            client.from('projects').select('status'),
+            client.from('opportunities').select('stage'),
+          ]);
 
         if (projRes.error) throw projRes.error;
         if (overdueRes.error) throw overdueRes.error;
@@ -71,6 +118,8 @@ export default function AdminDashboardPage() {
         if (tasksRes.error) throw tasksRes.error;
         if (syncRes.error) throw syncRes.error;
         if (auditRes.error) throw auditRes.error;
+        if (allProjsRes.error) throw allProjsRes.error;
+        if (allOppsRes.error) throw allOppsRes.error;
 
         if (cancelled) return;
 
@@ -93,10 +142,42 @@ export default function AdminDashboardPage() {
 
         setLastSync((syncRes.data ?? null) as unknown as ITHubSyncLog | null);
         setActivity((auditRes.data ?? []) as unknown as AuditLog[]);
+
+        // ─── Chart aggregation ─────────────────────────────────────────
+        // Project status: include all 4 statuses even when count=0 so the
+        // donut always has stable slices/colors.
+        const allProjs = (allProjsRes.data ?? []) as unknown as Pick<Project, 'status'>[];
+        const projCounts = new Map<ProjectStatus, number>();
+        for (const s of PROJECT_STATUS_ORDER) projCounts.set(s, 0);
+        for (const p of allProjs) {
+          if (projCounts.has(p.status)) projCounts.set(p.status, (projCounts.get(p.status) ?? 0) + 1);
+        }
+        setProjectStatusData(
+          PROJECT_STATUS_ORDER.map((s) => ({
+            label: PROJECT_STATUS_LABEL[s],
+            value: projCounts.get(s) ?? 0,
+          })),
+        );
+
+        const allOpps = (allOppsRes.data ?? []) as unknown as { stage: OpportunityStage }[];
+        const oppCounts = new Map<OpportunityStage, number>();
+        for (const s of OPPORTUNITY_STAGE_ORDER) oppCounts.set(s, 0);
+        for (const o of allOpps) {
+          if (oppCounts.has(o.stage)) oppCounts.set(o.stage, (oppCounts.get(o.stage) ?? 0) + 1);
+        }
+        setOppStageData(
+          OPPORTUNITY_STAGE_ORDER.map((s) => ({
+            label: OPPORTUNITY_STAGE_LABEL[s],
+            value: oppCounts.get(s) ?? 0,
+          })),
+        );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : '加载仪表盘失败');
       } finally {
-        !cancelled && setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setChartsLoading(false);
+        }
       }
     })();
     return () => {
@@ -120,6 +201,9 @@ export default function AdminDashboardPage() {
       </div>
     );
   }
+
+  const projectStatusEmpty = !chartsLoading && projectStatusData.every((d) => d.value === 0);
+  const oppStageEmpty = !chartsLoading && oppStageData.every((d) => d.value === 0);
 
   return (
     <div className="container">
@@ -157,6 +241,28 @@ export default function AdminDashboardPage() {
           tone={stats.avgLoad > 5 ? 'warning' : 'default'}
           hint="open tasks / assignees"
         />
+      </div>
+
+      {/* Phase C: distribution charts (donut) */}
+      <div className="grid-cards" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 24 }}>
+        <ChartCard
+          title="项目状态分布"
+          subtitle="按 status 聚合"
+          loading={chartsLoading}
+          empty={projectStatusEmpty}
+          emptyText="暂无项目数据"
+        >
+          <DonutChart data={projectStatusData} />
+        </ChartCard>
+        <ChartCard
+          title="商机阶段分布"
+          subtitle="按 stage 聚合"
+          loading={chartsLoading}
+          empty={oppStageEmpty}
+          emptyText="暂无商机数据"
+        >
+          <DonutChart data={oppStageData} />
+        </ChartCard>
       </div>
 
       {(canManageUsers(role as 'admin') || canManageCustomFields(role as 'admin')) && (

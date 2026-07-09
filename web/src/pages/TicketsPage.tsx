@@ -8,6 +8,8 @@ import { canSyncITHub } from '../utils/rbac';
 import type { ITHubTicket } from '../types/contracts';
 import EmptyState from '../components/EmptyState';
 import ITHubTicketCard from '../components/ITHubTicketCard';
+import ChartCard from '../components/ChartCard';
+import BarChart from '../components/BarChart';
 
 type Tab = 'open' | 'all';
 
@@ -77,6 +79,35 @@ export default function TicketsPage() {
   const visible = tab === 'open'
     ? tickets.filter((t) => t.status !== 'closed' && t.status !== 'resolved')
     : tickets;
+
+  // Phase C: SLA distribution buckets.
+  //   breached = sla_breach_at < now AND status != closed/resolved
+  //   warning  = sla_breach_at within 24h AND status != closed/resolved
+  //   ok       = everything else (incl. closed/resolved)
+  const slaData = (() => {
+    const now = Date.now();
+    const dayMs = 24 * 3600 * 1000;
+    let breached = 0;
+    let warning = 0;
+    let ok = 0;
+    for (const t of tickets) {
+      const isOpen = t.status !== 'closed' && t.status !== 'resolved';
+      const breachAt = t.sla_breach_at ? new Date(t.sla_breach_at).getTime() : null;
+      if (isOpen && breachAt !== null && breachAt < now) {
+        breached++;
+      } else if (isOpen && breachAt !== null && breachAt - now < dayMs) {
+        warning++;
+      } else {
+        ok++;
+      }
+    }
+    return [
+      { label: '已超时', value: breached },
+      { label: '24h 内', value: warning },
+      { label: '正常', value: ok },
+    ];
+  })();
+  const slaEmpty = !loading && tickets.length === 0;
 
   const canSync = canSyncITHub(role);
 
@@ -154,6 +185,22 @@ export default function TicketsPage() {
             {syncing ? '同步中...' : '同步 ITHub'}
           </button>
         )}
+      </div>
+
+      {/* Phase C: SLA distribution chart */}
+      <div style={{ marginBottom: 24 }}>
+        <ChartCard
+          title="SLA 状态分布"
+          subtitle="已超时 / 24h 内 / 正常"
+          loading={loading}
+          empty={slaEmpty}
+          emptyText="暂无工单数据"
+        >
+          <BarChart
+            data={slaData}
+            colors={['var(--danger)', 'var(--warning)', 'var(--success)']}
+          />
+        </ChartCard>
       </div>
 
       <div
