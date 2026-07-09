@@ -1,6 +1,11 @@
-# CI: lint + typecheck + unit tests on every PR / push to main.
-# E2E only runs when secrets E2E_SUPABASE_URL + E2E_SUPABASE_ANON_KEY are
-# configured (on protected branches / repos that host a staging Supabase).
+# CI: lint + typecheck + unit tests + E2E on every PR / push to main.
+# The Supabase-gated e2e test (`opportunity-to-project.spec.ts`) detects
+# missing E2E_SUPABASE_URL / E2E_SUPABASE_ANON_KEY secrets via test.skip() —
+# so the e2e job always runs and gracefully skips the Supabase test when
+# the repo hasn't configured staging Supabase credentials. We can't gate
+# the job itself with `if: ${{ secrets.X }}` because GitHub Actions
+# rejects secret references in job-level `if:` (security: secrets must
+# not be evaluated in expressions that appear in logs).
 
 name: CI
 
@@ -32,17 +37,16 @@ jobs:
       - name: Unit tests
         run: npm test
 
-  # Only run E2E when Supabase secrets are present (otherwise the gated
-  # `opportunity-to-project.spec.ts` would skip; still useful to verify the
-  # mock-mode UI on a clean CI box).
   e2e:
     needs: lint-and-test
-    if: ${{ secrets.E2E_SUPABASE_URL && secrets.E2E_SUPABASE_ANON_KEY }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
     env:
+      # Passed as env (NOT referenced in `if:`) so GHA accepts the workflow.
+      # When secrets are missing, these resolve to empty strings and the
+      # Supabase-gated Playwright spec calls test.skip() at runtime.
       E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
       E2E_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
     steps:
