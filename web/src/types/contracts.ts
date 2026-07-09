@@ -215,10 +215,12 @@ export type FieldType = z.infer<typeof FieldTypeEnum>;
 
 export const FieldDefinitionSchema = z.object({
   id: z.string().uuid(),
-  name: z.string().min(1).max(40), // machine name, snake_case recommended
+  // machine name — snake_case. Regex matches the SQL CHECK on
+  // opportunity_field_definitions.name char-for-char: ^[a-z][a-z0-9_]*$
+  name: z.string().max(40).regex(/^[a-z][a-z0-9_]*$/),
   label: z.string().min(1).max(80), // human label
   type: FieldTypeEnum,
-  options: z.array(z.string()).nullable(), // required when type='select'
+  options: z.array(z.string()).nullable(), // JSONB → array of strings; required when type='select'
   required: z.boolean(),
   display_order: z.number().int(),
   is_active: z.boolean(),

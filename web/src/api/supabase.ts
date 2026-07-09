@@ -289,6 +289,62 @@ export type Database = {
           errors?: string | null;
         };
       };
+      // ─── Phase B (v0.2): opportunity custom fields ──────────────────────
+      // Mirrors supabase/migrations/0004_opportunity_custom_fields.sql.
+      // `options` is jsonb on the wire (a JSON array of strings), typed here
+      // as string[] | null. `value` is always text; the UI casts per `type`.
+      opportunity_field_definitions: {
+        Row: {
+          id: string;
+          name: string;
+          label: string;
+          type: 'text' | 'number' | 'date' | 'select';
+          options: string[] | null;
+          required: boolean;
+          display_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          label: string;
+          type: 'text' | 'number' | 'date' | 'select';
+          options?: string[] | null;
+          required?: boolean;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          label?: string;
+          type?: 'text' | 'number' | 'date' | 'select';
+          options?: string[] | null;
+          required?: boolean;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+      };
+      opportunity_field_values: {
+        Row: {
+          opportunity_id: string;
+          field_id: string;
+          value: string | null;
+        };
+        Insert: {
+          opportunity_id: string;
+          field_id: string;
+          value?: string | null;
+        };
+        Update: {
+          opportunity_id?: string;
+          field_id?: string;
+          value?: string | null;
+        };
+      };
     };
     Views: Record<string, never>;
     Functions: {
