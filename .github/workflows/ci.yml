@@ -24,6 +24,10 @@ jobs:
         with:
           node-version: 24
 
+      - name: Strip empty-version entries from lock
+        working-directory: web
+        run: python3 scripts/strip-empty-versions.py
+
       - run: npm ci --no-audit --no-fund
 
       - name: Typecheck
@@ -51,6 +55,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Strip empty-version entries from lock
+        working-directory: web
+        run: python3 scripts/strip-empty-versions.py
 
       - run: npm ci --no-audit --no-fund
 
