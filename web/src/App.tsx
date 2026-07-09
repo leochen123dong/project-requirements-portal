@@ -11,20 +11,34 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import TicketsPage from './pages/TicketsPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import { useAuthStore } from './store/authStore';
-import { supabase } from './api/supabase';
+import { fetchProfile, supabase } from './api/supabase';
 
 export default function App() {
   const setSession = useAuthStore((s) => s.setSession);
+  const setProfile = useAuthStore((s) => s.setProfile);
 
   // Hydrate auth state from Supabase on mount + listen for changes.
+  // On every session change, also fetch the matching profile row so
+  // Layout / RoleGate / pages can read role without an extra round-trip.
   useEffect(() => {
     if (!supabase) return; // env not configured — skip hydration
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const loadProfile = (userId: string | undefined) => {
+      if (!userId) {
+        setProfile(null);
+        return;
+      }
+      fetchProfile(userId).then(setProfile).catch(() => setProfile(null));
+    };
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      loadProfile(data.session?.user.id);
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      loadProfile(session?.user.id);
     });
     return () => sub.subscription.unsubscribe();
-  }, [setSession]);
+  }, [setSession, setProfile]);
 
   return (
     <Routes>
