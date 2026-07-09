@@ -2,6 +2,49 @@
 
 所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [v0.3.0] - 2026-07-10
+
+用户实测反馈迭代:商机详情页补齐 3 个核心能力。
+
+### ✨ 新功能
+
+**商机阶段修改**(OpportunityDetailPage 顶栏)
+- "修改阶段"按钮(presales / admin 可见)
+- Modal 下拉选 6 个阶段 → ConfirmDialog 二次确认 → UPDATE
+- 新增 `canUpdateOpportunity(role)` helper
+- 触发器自动写 audit_log(详情页时间线可见)
+
+**商机日志**(详情页新 section)
+- 合并展示 comments(用户评论)+ audit_log(系统变更)
+- CommentEditor 自由文本评论(realtime 推送)
+- audit_log 实时不可见(不在 publication),刷新即可
+- presales 现在可读 audit_log(新增 RLS policy `0006_audit_log_presales_read.sql`)
+- 空时显示 EmptyState
+
+**商机标签**(详情页新 section)
+- 多值 free-form 文本标签
+- 新表 `opportunity_tags`(独立关联表,FK 级联删除)
+- 新增 `OpportunityTagSchema` Zod 类型
+- RLS:SELECT 所有人 / INSERT-DELETE 仅 presales+admin
+- 重复标签去重(silent skip)
+- chip 显示 + ✕ 删除(仅 owner)
+
+### 🧪 测试覆盖
+
+- **202 单测**(Vitest,+9):rbac matrix 加 updateOpportunity + OpportunityStageEnum 6 阶段覆盖 + OpportunityTagSchema
+- **50 E2E**(Playwright,+12):`opportunity-detail.spec.ts`(presales/pm 双角色,12 个 mock-only 用例)
+
+### 📦 度量
+
+- 构建:643 KB JS / 188 KB gzipped(几乎不增加)
+- 单测:581ms
+- E2E:~3s
+- 4 个新 commit + 2 个新 migration 文件
+
+### ⚠️ 部署注意
+
+`migrations/0006_audit_log_presales_read.sql` 与 `0007_opportunity_tags.sql` 都需要在 Supabase SQL Editor 跑(或 `supabase db push`)。
+
 ## [v0.2.1] - 2026-07-10
 
 小补丁:用户反馈调整。
