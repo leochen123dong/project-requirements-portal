@@ -30,6 +30,7 @@ export const PAGE_PERMISSIONS = {
 export const canCreateOpportunity = (r: Role) => can(r, ['presales', 'admin']);
 export const canHandoverOpportunity = (r: Role) => can(r, ['presales', 'admin']);
 export const canDeleteOpportunity = (r: Role) => can(r, ['presales', 'admin']);
+export const canUpdateOpportunity = (r: Role) => can(r, ['presales', 'admin']);
 export const canEditProject = (r: Role) => can(r, ['pm', 'admin']);
 export const canAssignTask = (r: Role) => can(r, ['pm', 'delivery', 'admin']);
 export const canCompleteTask = (r: Role) => can(r, ['delivery', 'pm', 'admin']);

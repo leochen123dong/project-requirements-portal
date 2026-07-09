@@ -168,6 +168,18 @@ export const HandoverRequest = z.object({
 });
 export type HandoverRequest = z.infer<typeof HandoverRequest>;
 
+// ─── Opportunity tags (v0.3) ────────────────────────────────────────────────
+// Schema mirrors supabase/migrations/0007_opportunity_tags.sql.
+// Tags are free-form text (no admin-defined vocabulary). One row per tag,
+// composite PK (opportunity_id, tag).
+
+export const OpportunityTagSchema = z.object({
+  opportunity_id: z.string().uuid(),
+  tag: z.string().min(1).max(40),
+  created_at: z.string().optional(),
+});
+export type OpportunityTag = z.infer<typeof OpportunityTagSchema>;
+
 // ─── Admin: Edge Function action contract ────────────────────────────────────
 // Sent to supabase.functions.invoke('admin-users', { body: ... }).
 // The action discriminates; subsequent fields vary by action.
