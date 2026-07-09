@@ -330,6 +330,16 @@ export async function signOut() {
 }
 
 /**
+ * Password sign-in (added because Supabase free tier rate-limits magic-link
+ * emails at ~4/hour). The user must have a password set (via Supabase
+ * Dashboard → Auth → Users → "Send recovery email" or via SQL with crypt()).
+ */
+export async function signInWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error('Supabase 未配置');
+  return supabase.auth.signInWithPassword({ email, password });
+}
+
+/**
  * Fetch the profile row for `userId`.
  * Returns `null` if the profile doesn't exist yet (e.g. trigger hasn't fired)
  * or if Supabase isn't configured.
