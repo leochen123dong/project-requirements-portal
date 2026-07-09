@@ -1,19 +1,24 @@
 /**
  * Shared contracts between frontend & backend.
- * Phase 0 stub — Phase 1 backend-dev will populate Zod schemas and TS types
- * matching the Postgres schema in `supabase/migrations/`.
+ * Phase 1: Zod schemas + TS types matching Postgres schema
+ *   in `supabase/migrations/0001_init.sql` and RLS in `0002_rls.sql`.
  *
  * CONTRACT RULES:
  *  - Every entity has both a Zod schema (runtime validation) and an inferred TS type.
  *  - Field names MUST match Postgres column names (snake_case stays snake_case in TS).
- *  - Enums in TS MUST match Postgres enums exactly.
+ *  - Enums in TS MUST match Postgres CHECK constraints exactly (case-sensitive).
  */
 
 import { z } from 'zod';
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
 
-export const RoleEnum = z.enum(['presales', 'pm', 'delivery', 'postsales', 'admin']);
+// ROLES tuple — kept as a const tuple for direct iteration in UI (e.g. role
+// picker) and as a runtime value. The matching RoleEnum Zod schema below
+// uses the same literal values as the CHECK constraint in profiles.role.
+export const ROLES = ['presales', 'pm', 'delivery', 'postsales', 'admin'] as const;
+
+export const RoleEnum = z.enum(ROLES);
 export type Role = z.infer<typeof RoleEnum>;
 
 export const OpportunityStageEnum = z.enum([
@@ -44,7 +49,7 @@ export const CommentTargetTypeEnum = z.enum(['opportunity', 'project', 'mileston
 export type CommentTargetType = z.infer<typeof CommentTargetTypeEnum>;
 
 // ─── Entities ──────────────────────────────────────────────────────────────
-// TODO(Phase 1 backend-dev): replace stubs with real Zod schemas matching migrations.
+// All field types match the Postgres columns in 0001_init.sql exactly.
 
 export const ProfileSchema = z.object({
   id: z.string().uuid(),
@@ -62,6 +67,7 @@ export const OpportunitySchema = z.object({
   stage: OpportunityStageEnum,
   owner_id: z.string().uuid(),
   created_at: z.string(),
+  updated_at: z.string(),
 });
 export type Opportunity = z.infer<typeof OpportunitySchema>;
 
@@ -127,6 +133,26 @@ export const ITHubTicketSchema = z.object({
   last_synced_at: z.string(),
 });
 export type ITHubTicket = z.infer<typeof ITHubTicketSchema>;
+
+// Audit log — used by AdminDashboardPage "Recent activity" stream.
+export const AuditLogSchema = z.object({
+  id: z.string().uuid(),
+  actor_id: z.string().uuid().nullable(),
+  action: z.enum(['insert', 'update', 'delete']),
+  entity: z.string(),
+  entity_id: z.string().uuid().nullable(),
+  at: z.string(),
+});
+export type AuditLog = z.infer<typeof AuditLogSchema>;
+
+// ITHub sync log — used by AdminDashboardPage "Last sync time" widget.
+export const ITHubSyncLogSchema = z.object({
+  id: z.string().uuid(),
+  ran_at: z.string(),
+  tickets_pulled: z.number().int(),
+  errors: z.string().nullable(),
+});
+export type ITHubSyncLog = z.infer<typeof ITHubSyncLogSchema>;
 
 // ─── Request / Response helpers ────────────────────────────────────────────
 
