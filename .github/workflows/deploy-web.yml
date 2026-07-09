@@ -29,7 +29,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund --prefer-offline
+        run: npm install --no-audit --no-fund --no-package-lock --omit=optional
 
       - name: Typecheck
         working-directory: web

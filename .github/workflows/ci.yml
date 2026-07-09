@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 22
 
-      - run: npm install --no-audit --no-fund --prefer-offline
+      - run: npm install --no-audit --no-fund --no-package-lock --omit=optional
 
       - name: Typecheck
         run: npm run typecheck
@@ -52,7 +52,7 @@ jobs:
         with:
           node-version: 22
 
-      - run: npm install --no-audit --no-fund --prefer-offline
+      - run: npm install --no-audit --no-fund --no-package-lock --omit=optional
 
       - name: Build production bundle
         run: npm run build
