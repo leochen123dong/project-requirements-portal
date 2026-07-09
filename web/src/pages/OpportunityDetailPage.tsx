@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,10 +6,13 @@ import { z } from 'zod';
 import type { Database } from '../api/supabase';
 import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
+import { useRealtime } from '../hooks/useRealtime';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import { canHandoverOpportunity, canUpdateOpportunity } from '../utils/rbac';
 import type {
+  AuditLog,
+  Comment,
   FieldDefinition,
   FieldValue,
   Opportunity,
@@ -19,6 +22,7 @@ import type {
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import CommentEditor from '../components/CommentEditor';
 
 const HandoverSchema = z.object({
   pm_id: z.string().uuid('请选择有效的 PM'),
@@ -41,6 +45,55 @@ const STAGE_LABEL: Record<string, string> = {
   won: '成交',
   lost: '丢单',
 };
+
+// ─── Timeline (v0.3 Phase B) ────────────────────────────────────────────────
+// Unified view of free-text comments + automatic audit events for this
+// opportunity. Comments come from `comments` (target_type='opportunity');
+// audit entries come from `audit_log` (entity='opportunities'). Each row in
+// the merged timeline carries its `at` time + a `kind` discriminator so the
+// renderer can switch between comment / audit presentation.
+
+type CommentTimelineEvent = { kind: 'comment'; at: string; comment: Comment };
+type AuditTimelineEvent = { kind: 'audit'; at: string; entry: AuditLog };
+type TimelineEvent = CommentTimelineEvent | AuditTimelineEvent;
+
+function buildTimeline(comments: Comment[], auditEntries: AuditLog[]): TimelineEvent[] {
+  const events: TimelineEvent[] = [
+    ...comments.map(
+      (c): CommentTimelineEvent => ({ kind: 'comment', at: c.created_at, comment: c }),
+    ),
+    ...auditEntries.map(
+      (a): AuditTimelineEvent => ({ kind: 'audit', at: a.at, entry: a }),
+    ),
+  ];
+  // Newest first — matches activity-feed convention.
+  return events.sort((a, b) => b.at.localeCompare(a.at));
+}
+
+function formatAuthorId(id: string): string {
+  return `${id.slice(0, 6)}…`;
+}
+
+function formatAbsolute(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('zh-CN', { hour12: false });
+  } catch {
+    return iso;
+  }
+}
+
+function formatRelative(iso: string): string {
+  try {
+    const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diffSec < 60) return '刚刚';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分钟前`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小时前`;
+    if (diffSec < 7 * 86400) return `${Math.floor(diffSec / 86400)} 天前`;
+    return new Date(iso).toLocaleDateString('zh-CN');
+  } catch {
+    return iso;
+  }
+}
 
 /**
  * Local cast for the two new tables. Database type stub in api/supabase.ts
@@ -122,6 +175,11 @@ export default function OpportunityDetailPage() {
     Array<{ def: FieldDefinition; value: string | null }>
   >([]);
 
+  // Phase B: follow-up log (comments + audit events for this opportunity).
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [auditEntries, setAuditEntries] = useState<AuditLog[]>([]);
+  const [authorMap, setAuthorMap] = useState<Record<string, string>>({});
+
   const {
     register,
     handleSubmit,
@@ -140,8 +198,10 @@ export default function OpportunityDetailPage() {
     if (showSpinner) setLoading(true);
     try {
       // Run independent queries in parallel: opportunity, PM list,
-      // active field definitions, and stored values for this opportunity.
-      const [oppRes, pmsRes, defsRes, valsRes] = await Promise.all([
+      // active field definitions, stored values, comments for this
+      // opportunity, audit entries, and the author profiles needed to
+      // resolve display names.
+      const [oppRes, pmsRes, defsRes, valsRes, commentsRes, auditRes] = await Promise.all([
         client.from('opportunities').select('*').eq('id', id).maybeSingle(),
         client.from('profiles').select('*').eq('role', 'pm'),
         fieldClient
@@ -156,11 +216,36 @@ export default function OpportunityDetailPage() {
               .select('*')
               .eq('opportunity_id', id)
           : Promise.resolve({ data: [], error: null }),
+        client
+          .from('comments')
+          .select('*')
+          .eq('target_type', 'opportunity')
+          .eq('target_id', id)
+          .order('created_at', { ascending: true }),
+        client
+          .from('audit_log')
+          .select('*')
+          .eq('entity', 'opportunities')
+          .eq('entity_id', id)
+          .order('at', { ascending: false })
+          .limit(50),
       ]);
       if (oppRes.error) throw oppRes.error;
       if (pmsRes.error) throw pmsRes.error;
       if (defsRes.error) throw new Error(defsRes.error.message);
       if (valsRes.error) throw new Error(valsRes.error.message);
+      // Comments and audit log are best-effort: failure surfaces as an
+      // empty list + a non-fatal toast so the rest of the page still
+      // renders. Comments SELECT allows all authenticated; audit_log may
+      // RLS-deny for non-presales roles.
+      if (commentsRes.error) toast.error('加载评论失败:' + commentsRes.error.message);
+      if (auditRes.error) {
+        // pm / delivery / postsales won't have the audit_log SELECT policy,
+        // so an RLS denial is the expected state for them — log quietly.
+        if (auditRes.error.message !== null && !auditRes.error.message.startsWith('permission denied')) {
+          toast.error('加载审计日志失败:' + auditRes.error.message);
+        }
+      }
       setOpp((oppRes.data ?? null) as unknown as Opportunity | null);
       setPms((pmsRes.data ?? []) as unknown as Profile[]);
 
@@ -173,6 +258,35 @@ export default function OpportunityDetailPage() {
       setCustomValues(
         defs.map((d) => ({ def: d, value: byId.get(d.id) ?? null })),
       );
+
+      // Phase B: populate comments, audit entries, and author display-name map.
+      const nextComments = (commentsRes.data ?? []) as unknown as Comment[];
+      const nextAudit = (auditRes.data ?? []) as unknown as AuditLog[];
+      setComments(nextComments);
+      setAuditEntries(nextAudit);
+
+      const authorIds = new Set<string>();
+      for (const c of nextComments) authorIds.add(c.author_id);
+      for (const a of nextAudit) {
+        if (a.actor_id) authorIds.add(a.actor_id);
+      }
+      if (authorIds.size > 0) {
+        const { data: profs, error: profsErr } = await client
+          .from('profiles')
+          .select('*')
+          .in('id', Array.from(authorIds));
+        if (profsErr) {
+          setAuthorMap({});
+        } else {
+          const map: Record<string, string> = {};
+          for (const p of (profs ?? []) as unknown as Profile[]) {
+            map[p.id] = p.display_name;
+          }
+          setAuthorMap(map);
+        }
+      } else {
+        setAuthorMap({});
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '加载失败');
     } finally {
@@ -184,6 +298,81 @@ export default function OpportunityDetailPage() {
     void loadAll(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // ─── Phase B: refetch comments (called from realtime + CommentEditor) ───
+  // Mirror the latest `authorMap` in a ref so the realtime subscriber (whose
+  // identity we want to keep stable across profile updates) can read it
+  // without taking it as a dependency.
+  const authorMapRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    authorMapRef.current = authorMap;
+  }, [authorMap]);
+
+  const refetchComments = useCallback(async () => {
+    if (!client || !id) return;
+    const { data, error } = await client
+      .from('comments')
+      .select('*')
+      .eq('target_type', 'opportunity')
+      .eq('target_id', id)
+      .order('created_at', { ascending: true });
+    if (error) {
+      toast.error('刷新评论失败:' + error.message);
+      return;
+    }
+    const next = (data ?? []) as unknown as Comment[];
+    setComments(next);
+    // Lazy-fetch any newly-seen authors so the timeline can show their name.
+    const known = new Set(Object.keys(authorMapRef.current));
+    const fresh = next.map((c) => c.author_id).filter((aid) => !known.has(aid));
+    if (fresh.length === 0) return;
+    const { data: profs, error: profsErr } = await client
+      .from('profiles')
+      .select('*')
+      .in('id', fresh);
+    if (profsErr || !profs) return;
+    const additions: Record<string, string> = {};
+    for (const p of (profs as unknown as Profile[])) {
+      additions[p.id] = p.display_name;
+    }
+    if (Object.keys(additions).length > 0) {
+      setAuthorMap((cur) => ({ ...cur, ...additions }));
+    }
+  }, [client, id, toast]);
+
+  // Realtime subscription: re-fetch comments on any INSERT/UPDATE/DELETE on
+  // the `comments` table for this opportunity. Server-side filter is the
+  // primary guard; client-side row check defends DELETE events where `new`
+  // is null (we look at `old` instead). `audit_log` is intentionally NOT
+  // in the realtime publication — new audit entries show only on page
+  // refresh.
+  useRealtime(
+    'comments',
+    useCallback(
+      async (payload: {
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        new: unknown;
+        old: unknown;
+      }) => {
+        if (!id) return;
+        // For INSERT/UPDATE the row is in `new`; for DELETE it's in `old`.
+        const sourceRow =
+          payload.eventType === 'DELETE'
+            ? (payload.old as { target_type?: string; target_id?: string } | null)
+            : (payload.new as { target_type?: string; target_id?: string } | null);
+        if (
+          !sourceRow ||
+          sourceRow.target_type !== 'opportunity' ||
+          sourceRow.target_id !== id
+        ) {
+          return;
+        }
+        await refetchComments();
+      },
+      [id, refetchComments],
+    ),
+    id ? `target_id=eq.${id}` : undefined,
+  );
 
   const onHandoverSubmit = (values: HandoverInput) => {
     setHandoverValues(values);
@@ -283,6 +472,13 @@ export default function OpportunityDetailPage() {
 
   const canHandover = canHandoverOpportunity(role);
   const canUpdate = canUpdateOpportunity(role);
+
+  // Phase B: merged timeline (comments + audit entries), newest first.
+  const timeline = useMemo(
+    () => buildTimeline(comments, auditEntries),
+    [comments, auditEntries],
+  );
+  const resolveAuthor = (id: string) => authorMap[id];
 
   return (
     <div className="container">
@@ -387,6 +583,103 @@ export default function OpportunityDetailPage() {
           </dl>
         </div>
       )}
+
+      {/*
+        Phase B: 跟进记录 / 日志 — merged timeline of free-text comments and
+        automatic audit entries (e.g. stage changes from Phase A). Renders
+        client-realtime on comments (re-renders new entries via refetch on
+        the realtime channel); new audit entries only show on next page
+        refresh because audit_log is not in the realtime publication.
+      */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 className="card-title">跟进记录 / 日志</h3>
+
+        {loading ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>加载中...</p>
+        ) : timeline.length === 0 ? (
+          <EmptyState
+            title="暂无跟进记录"
+            description="在下方添加第一条评论"
+          />
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {timeline.map((event) => {
+              if (event.kind === 'comment') {
+                const c = event.comment;
+                const author = resolveAuthor(c.author_id) ?? formatAuthorId(c.author_id);
+                return (
+                  <li
+                    key={`c-${c.id}`}
+                    style={{
+                      borderBottom: '1px solid var(--border)',
+                      padding: '10px 0',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        fontSize: 13,
+                        color: 'var(--text-muted)',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span aria-hidden style={{ fontSize: 14 }}>📝</span>
+                      <span
+                        className="user-avatar"
+                        style={{ width: 24, height: 24, fontSize: 11 }}
+                        aria-hidden
+                      >
+                        {(author || '?').slice(0, 1).toUpperCase()}
+                      </span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>{author}</span>
+                      <span>{formatRelative(event.at)}</span>
+                    </div>
+                    <div style={{ whiteSpace: 'pre-wrap', paddingLeft: 32 }}>{c.body}</div>
+                  </li>
+                );
+              }
+              const a = event.entry;
+              const actorName = a.actor_id
+                ? (resolveAuthor(a.actor_id) ?? formatAuthorId(a.actor_id))
+                : '系统';
+              return (
+                <li
+                  key={`a-${a.id}`}
+                  style={{
+                    borderBottom: '1px solid var(--border)',
+                    padding: '10px 0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 13,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <span aria-hidden style={{ fontSize: 14 }}>🔧</span>
+                  <strong style={{ color: 'var(--text)' }}>
+                    [{a.action}] {a.entity}
+                  </strong>
+                  <span>· 由 {actorName} · {formatAbsolute(event.at)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <CommentEditor
+            targetType="opportunity"
+            targetId={opp.id}
+            onPosted={() => {
+              // Optimistic: refetch immediately for snappy UX; the realtime
+              // channel will refetch again, which is idempotent.
+              void refetchComments();
+            }}
+          />
+        </div>
+      </div>
 
       <Modal
         open={showHandover}
