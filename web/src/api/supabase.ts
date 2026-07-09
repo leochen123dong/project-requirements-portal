@@ -345,6 +345,24 @@ export type Database = {
           value?: string | null;
         };
       };
+      // ─── Phase C (v0.3): opportunity tags ───────────────────────────────
+      // Mirrors supabase/migrations/0007_opportunity_tags.sql. Composite PK
+      // (opportunity_id, tag); no UPDATE policy exists — tags are insert-or-
+      // delete only, so Update is `never` to make accidental `.update()`
+      // calls a type error at the API surface (a rename = delete + insert).
+      opportunity_tags: {
+        Row: {
+          opportunity_id: string;
+          tag: string;
+          created_at: string;
+        };
+        Insert: {
+          opportunity_id: string;
+          tag: string;
+          created_at?: string;
+        };
+        Update: never; // tags are insert-or-delete only — enforced at API surface
+      };
     };
     Views: Record<string, never>;
     Functions: {

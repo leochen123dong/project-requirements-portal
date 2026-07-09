@@ -17,6 +17,7 @@ import type {
   FieldValue,
   Opportunity,
   OpportunityStage,
+  OpportunityTag,
   Profile,
 } from '../types/contracts';
 import EmptyState from '../components/EmptyState';
@@ -180,6 +181,12 @@ export default function OpportunityDetailPage() {
   const [auditEntries, setAuditEntries] = useState<AuditLog[]>([]);
   const [authorMap, setAuthorMap] = useState<Record<string, string>>({});
 
+  // Phase C: free-form tags (chips above the deliverables card).
+  const [tags, setTags] = useState<OpportunityTag[]>([]);
+  const [showAddTagModal, setShowAddTagModal] = useState(false);
+  const [newTagValue, setNewTagValue] = useState('');
+  const [addingTag, setAddingTag] = useState(false);
+
   const {
     register,
     handleSubmit,
@@ -201,7 +208,7 @@ export default function OpportunityDetailPage() {
       // active field definitions, stored values, comments for this
       // opportunity, audit entries, and the author profiles needed to
       // resolve display names.
-      const [oppRes, pmsRes, defsRes, valsRes, commentsRes, auditRes] = await Promise.all([
+      const [oppRes, pmsRes, defsRes, valsRes, commentsRes, auditRes, tagsRes] = await Promise.all([
         client.from('opportunities').select('*').eq('id', id).maybeSingle(),
         client.from('profiles').select('*').eq('role', 'pm'),
         fieldClient
@@ -229,6 +236,11 @@ export default function OpportunityDetailPage() {
           .eq('entity_id', id)
           .order('at', { ascending: false })
           .limit(50),
+        client
+          .from('opportunity_tags')
+          .select('*')
+          .eq('opportunity_id', id)
+          .order('created_at', { ascending: true }),
       ]);
       if (oppRes.error) throw oppRes.error;
       if (pmsRes.error) throw pmsRes.error;
@@ -264,6 +276,12 @@ export default function OpportunityDetailPage() {
       const nextAudit = (auditRes.data ?? []) as unknown as AuditLog[];
       setComments(nextComments);
       setAuditEntries(nextAudit);
+
+      // Phase C: populate tags. SELECT is best-effort and silently skipped on
+      // RLS denial — non-presales roles can still see the page; the empty
+      // list is the correct read-only view.
+      const nextTags = (tagsRes.data ?? []) as unknown as OpportunityTag[];
+      setTags(nextTags);
 
       const authorIds = new Set<string>();
       for (const c of nextComments) authorIds.add(c.author_id);
@@ -339,6 +357,67 @@ export default function OpportunityDetailPage() {
       setAuthorMap((cur) => ({ ...cur, ...additions }));
     }
   }, [client, id, toast]);
+
+  // ─── Phase C: tags refetch (called after add / remove) ─────────────────
+  const refetchTags = useCallback(async () => {
+    if (!client || !id) return;
+    const { data, error } = await client
+      .from('opportunity_tags')
+      .select('*')
+      .eq('opportunity_id', id)
+      .order('created_at', { ascending: true });
+    if (error) {
+      // Best-effort: a stale read isn't worth a toast, but log to console so
+      // devs can spot RLS surprises during E2E.
+      // eslint-disable-next-line no-console
+      console.warn('refetchTags failed:', error.message);
+      return;
+    }
+    setTags((data ?? []) as unknown as OpportunityTag[]);
+  }, [client, id]);
+
+  const handleAddTag = async () => {
+    if (!client || !opp) return;
+    const trimmed = newTagValue.trim();
+    if (!trimmed) return;
+    setAddingTag(true);
+    try {
+      const { error } = await client
+        .from('opportunity_tags')
+        .insert({ opportunity_id: opp.id, tag: trimmed });
+      if (error) {
+        // PK violation (duplicate (opportunity_id, tag)) is treated as
+        // success: the user's intent ("make sure this tag exists") is
+        // already satisfied. Any other error surfaces to the user.
+        if (!error.message.toLowerCase().includes('duplicate')) {
+          throw error;
+        }
+      }
+      setNewTagValue('');
+      setShowAddTagModal(false);
+      await refetchTags();
+      toast.success('标签已添加');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '添加失败');
+    } finally {
+      setAddingTag(false);
+    }
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!client || !opp) return;
+    try {
+      const { error } = await client
+        .from('opportunity_tags')
+        .delete()
+        .eq('opportunity_id', opp.id)
+        .eq('tag', tag);
+      if (error) throw error;
+      await refetchTags();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除失败');
+    }
+  };
 
   // Realtime subscription: re-fetch comments on any INSERT/UPDATE/DELETE on
   // the `comments` table for this opportunity. Server-side filter is the
@@ -527,6 +606,52 @@ export default function OpportunityDetailPage() {
             <dd style={{ margin: 0 }}>{STAGE_LABEL[opp.stage] ?? opp.stage}</dd>
             <dt style={{ color: 'var(--text-muted)' }}>创建于</dt>
             <dd style={{ margin: 0 }}>{new Date(opp.created_at).toLocaleString('zh-CN')}</dd>
+            <dt style={{ color: 'var(--text-muted)' }}>标签</dt>
+            <dd style={{ margin: 0 }}>
+              {tags.length === 0 && !canUpdate ? (
+                <span style={{ color: 'var(--text-muted)' }}>(无标签)</span>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {tags.map((t) => (
+                    <span
+                      key={t.tag}
+                      className="tag tag-info"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      {t.tag}
+                      {canUpdate && (
+                        <button
+                          onClick={() => handleRemoveTag(t.tag)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 0,
+                            color: 'inherit',
+                            fontSize: 12,
+                            lineHeight: 1,
+                          }}
+                          aria-label={`移除标签 ${t.tag}`}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  {tags.length === 0 && canUpdate && (
+                    <span style={{ color: 'var(--text-muted)' }}>(无标签)</span>
+                  )}
+                  {canUpdate && (
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => setShowAddTagModal(true)}
+                    >
+                      + 添加标签
+                    </button>
+                  )}
+                </div>
+              )}
+            </dd>
           </dl>
         </div>
 
@@ -805,6 +930,57 @@ export default function OpportunityDetailPage() {
           setPendingStage(null);
         }}
       />
+
+      <Modal
+        open={showAddTagModal}
+        onClose={() => {
+          if (addingTag) return;
+          setShowAddTagModal(false);
+          setNewTagValue('');
+        }}
+        title="添加标签"
+        actions={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowAddTagModal(false);
+                setNewTagValue('');
+              }}
+              disabled={addingTag}
+            >
+              取消
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleAddTag}
+              disabled={addingTag || !newTagValue.trim()}
+            >
+              {addingTag ? '添加中...' : '添加'}
+            </button>
+          </>
+        }
+      >
+        <div className="field">
+          <label className="field-label">标签名称</label>
+          <input
+            className="input"
+            value={newTagValue}
+            onChange={(e) => setNewTagValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newTagValue.trim() && !addingTag) {
+                void handleAddTag();
+              }
+            }}
+            placeholder="如:金融行业、老客户介绍"
+            maxLength={40}
+            autoFocus
+          />
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+          标签用于筛选商机,1–40 个字符。重复添加将自动忽略。
+        </p>
+      </Modal>
     </div>
   );
 }

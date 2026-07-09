@@ -17,6 +17,7 @@ import {
   FieldDefinitionSchema,
   FieldValueSchema,
   ChartDatumSchema,
+  OpportunityTagSchema,
 } from './contracts';
 
 const UUID = '11111111-1111-1111-1111-111111111111';
@@ -632,6 +633,63 @@ describe('ChartDatumSchema', () => {
   it('rejects a non-numeric value', () => {
     expect(() =>
       ChartDatumSchema.parse({ label: 'x', value: 'ten' }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── v0.3 — Opportunity tag schema (Phase C) ────────────────────────────────
+// Composite PK (opportunity_id, tag). Mirrors the SQL CHECK constraint in
+// 0007_opportunity_tags.sql: `length(tag) between 1 and 40`. If this schema
+// drifts from the SQL, an insert can succeed on the DB and then fail when the
+// row is read back through the typed Supabase client.
+
+const VALID_OPPORTUNITY_TAG = {
+  opportunity_id: UUID,
+  tag: '金融',
+  created_at: NOW,
+};
+
+describe('OpportunityTagSchema', () => {
+  it('accepts a fully populated tag row', () => {
+    expect(() => OpportunityTagSchema.parse(VALID_OPPORTUNITY_TAG)).not.toThrow();
+  });
+
+  it('accepts a tag row without created_at (DB provides default now())', () => {
+    // Mirror the Inserts of the typed Supabase client: created_at is optional
+    // because Postgres fills it in via `default now()`.
+    expect(() =>
+      OpportunityTagSchema.parse({ opportunity_id: UUID, tag: '金融' }),
+    ).not.toThrow();
+  });
+
+  it('rejects an empty tag (mirrors SQL CHECK length(tag) >= 1)', () => {
+    expect(() =>
+      OpportunityTagSchema.parse({ ...VALID_OPPORTUNITY_TAG, tag: '' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a tag longer than 40 chars (mirrors SQL CHECK length(tag) <= 40)', () => {
+    expect(() =>
+      OpportunityTagSchema.parse({ ...VALID_OPPORTUNITY_TAG, tag: 'a'.repeat(41) }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('accepts a tag of exactly 40 chars (boundary)', () => {
+    // Pins the inclusive upper bound — a regression that tightens to 39 would
+    // silently break the longest legal tags users can type.
+    expect(() =>
+      OpportunityTagSchema.parse({ ...VALID_OPPORTUNITY_TAG, tag: 'a'.repeat(40) }),
+    ).not.toThrow();
+  });
+
+  it('rejects a missing opportunity_id', () => {
+    const { opportunity_id: _omitted, ...withoutOppId } = VALID_OPPORTUNITY_TAG;
+    expect(() => OpportunityTagSchema.parse(withoutOppId)).toThrow(z.ZodError);
+  });
+
+  it('rejects an invalid UUID in opportunity_id', () => {
+    expect(() =>
+      OpportunityTagSchema.parse({ ...VALID_OPPORTUNITY_TAG, opportunity_id: 'not-a-uuid' }),
     ).toThrow(z.ZodError);
   });
 });
