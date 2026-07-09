@@ -25,11 +25,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund --no-package-lock --omit=optional
+        run: npm ci --no-audit --no-fund
 
       - name: Typecheck
         working-directory: web
