@@ -2,6 +2,55 @@
 
 所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [v0.2.0] - 2026-07-10
+
+增量版本。在 v0.1 已部署的基础上,新增 3 个能力。
+
+### ✨ 新功能
+
+**Admin 用户管理页**(`/admin/users`)
+- 用 UI 邀请 / 修改角色 / 重置密码 / 删除用户,不再需要 SQL
+- 后端:`supabase/functions/admin-users`(Deno Edge Function,持有 service_role)
+- 前端:`AdminUsersPage` + `api/admin.ts`(类型化 wrapper)
+- 操作权限:`canManageUsers(role)` — 仅 admin
+
+**商机自定义字段**(`/admin/fields`)
+- Schema-level:admin 定义字段列表(text / number / date / select),所有商机可用
+- 后端:`migrations/0004_opportunity_custom_fields.sql`(2 张表 + RLS)
+- 前端:`AdminCustomFieldsPage` + `OpportunitiesPage` 表单动态渲染 + 详情页展示
+- 操作权限:`canManageCustomFields(role)` — 仅 admin
+
+**图表(Recharts)**
+- 全 4 个数据页都加:
+  - 仪表盘:2 个 Donut(项目状态分布 + 商机阶段分布)
+  - 项目页:Bar(状态分布)
+  - 商机页:Bar(阶段分布)
+  - 工单页:Bar(SLA 状态:超时 / 24h 内 / 正常,带颜色)
+- 新增 3 个组件:`ChartCard` / `DonutChart` / `BarChart`
+- 设计 token:`--chart-1..--chart-6` 在 `global.css`
+- 零裸 hex,所有 chart 用 CSS 变量
+
+### 🧪 测试覆盖
+
+- **195 单测**(Vitest,+59):rbac / contracts / admin wrapper round-trip
+- **41 E2E**(Playwright,+22):
+  - `admin-users.spec.ts`(+8):admin 路径 + 非权限 gate(4 角色)
+  - `custom-fields.spec.ts`(+6):admin 字段页 + presales regression
+  - `charts.spec.ts`(+5):4 数据页 chart-card wiring
+  - `rbac.spec.ts`(+3):v0.2 admin gates
+  - `auth.spec.ts`(重写):适配 v0.1 密码登录模式
+
+### 📦 度量
+
+- 构建:**647 kB JS / 188 kB gzipped**(v0.1 是 275 kB / 85 kB;+Recharts 占 ~90 kB gzipped)
+- 单测:511ms(目标 < 5s)
+- E2E:2.5s(目标 < 10s)
+- 新增 7 个文件 + 8 个改动,共 ~1500 行代码
+
+### ⚠️ 部署注意
+
+`migrations/0004_opportunity_custom_fields.sql` 需要手动在 Supabase SQL Editor 跑(或 `supabase db push`)。Admin 操作相关的 Edge Function(`admin-users`)在用户环境跑 — 通过 `supabase functions deploy admin-users` 部署。
+
 ## [v0.1.0] - 2026-07-09
 
 首个可发布版本。从空仓库到完整可部署项目的 4 个 Phase 协作产出。
