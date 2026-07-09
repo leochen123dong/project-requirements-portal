@@ -24,7 +24,6 @@ export default function Layout() {
     { to: '/home', label: '首页', roles: ['presales', 'pm', 'delivery', 'postsales', 'admin'] as Role[] },
     { to: '/opportunities', label: '商机', roles: ['presales', 'pm', 'admin'] as Role[] },
     { to: '/projects', label: '项目', roles: ['pm', 'delivery', 'admin'] as Role[] },
-    { to: '/tickets', label: '工单', roles: ['postsales', 'pm', 'admin'] as Role[] },
     { to: '/admin', label: '仪表盘', roles: ['admin'] as Role[] },
     { to: '/admin/users', label: '用户管理', roles: ['admin'] as Role[] },
     { to: '/admin/fields', label: '自定义字段', roles: ['admin'] as Role[] },

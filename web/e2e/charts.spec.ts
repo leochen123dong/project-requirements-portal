@@ -9,16 +9,15 @@ import { test, expect, type Page } from '@playwright/test';
  * appear on every data page; the actual `.recharts-wrapper` only appears when
  * Supabase data is non-empty (i.e., not in mock-only mode).
  *
- * Pages asserted (4):
+ * Pages asserted (3 — tickets module removed in v0.2.1):
  *   - /admin         (2 chart cards: 项目状态分布 + 商机阶段分布)
  *   - /projects      (1 chart card: 状态分布)
  *   - /opportunities (1 chart card: 阶段分布)
- *   - /tickets       (1 chart card: SLA 状态分布)
  *
- * Mock-only (no real Supabase): the projects/opportunities/tickets pages
- * short-circuit to an env-aware empty state BEFORE the chart card mounts, so
- * we only verify reachability + page-title there. The admin dashboard is
- * an exception — its charts render even without data — so it gets the full
+ * Mock-only (no real Supabase): the projects/opportunities pages short-circuit
+ * to an env-aware empty state BEFORE the chart card mounts, so we only verify
+ * reachability + page-title there. The admin dashboard is an exception —
+ * its charts render even without data — so it gets the full
  * `.card` + `.card-title` assertions.
  */
 
@@ -69,7 +68,6 @@ async function seedAuth(page: Page, fixture: Fixtures): Promise<void> {
 const ADMIN = fixtureFor('admin', 'admin@demo.local', 'a1');
 const PM_USER = fixtureFor('pm', 'pm@demo.local', 'a2');
 const PRESALES = fixtureFor('presales', 'presales@demo.local', 'a3');
-const POSTSALES = fixtureFor('postsales', 'postsales@demo.local', 'a4');
 
 test.describe('charts container coverage (Phase C, mock-only)', () => {
   test('admin dashboard mounts exactly 2 chart cards (项目状态分布 + 商机阶段分布)', async ({
@@ -120,18 +118,6 @@ test.describe('charts container coverage (Phase C, mock-only)', () => {
     ).toBeVisible();
   });
 
-  test('tickets page is reachable (chart card waits for Supabase data)', async ({
-    page,
-  }) => {
-    await seedAuth(page, POSTSALES);
-    await page.goto('/#/tickets');
-
-    await expect(page).toHaveURL(/#\/tickets$/);
-    // TicketsPage renders a "演示模式" hint + an optional mock-data button
-    // when supabase is null (different from projects / opportunities).
-    await expect(page.getByText('演示模式')).toBeVisible();
-  });
-
   test('home page does NOT mount a chart card (no Phase C chart on home)', async ({
     page,
   }) => {
@@ -144,7 +130,7 @@ test.describe('charts container coverage (Phase C, mock-only)', () => {
     await expect(page).toHaveURL(/#\/home$/);
     await expect(
       page.locator('.card:has(.card-title)').filter({
-        hasText: /项目状态分布|商机阶段分布|阶段分布|SLA/,
+        hasText: /项目状态分布|商机阶段分布|阶段分布/,
       }),
     ).toHaveCount(0);
   });

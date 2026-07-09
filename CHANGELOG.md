@@ -2,6 +2,28 @@
 
 所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [v0.2.1] - 2026-07-10
+
+小补丁:用户反馈调整。
+
+### ✨ 新功能
+
+**商机删除**
+- `OpportunitiesPage` 加"删除"操作列(presales / admin 限定)
+- `ConfirmDialog` 二次确认,提示级联删除影响范围
+- 新增 `canDeleteOpportunity(role)` 权限 helper
+- 新增 migration `0005_opportunity_delete_policy.sql`(presales + admin 可 DELETE)
+
+### 🔥 移除
+
+**工单(ITHub SLA)模块**
+- 删除 `web/src/pages/TicketsPage.tsx` 与 `ITHubTicketCard.tsx` 组件
+- 移除 Layout 顶栏"工单"tab
+- 移除 App.tsx `/tickets` 路由
+- 移除 `canSyncITHub` 与 `PAGE_PERMISSIONS.tickets`
+- 移除 e2e `ithub-tickets.spec.ts` 与 `charts.spec.ts` 中的工单用例
+- **保留**:Supabase 数据库 `ithub_tickets` / `ithub_sync_log` 表、`ithub-sync` / `ithub-push` Edge Functions 不动(如需恢复 UI 只需还原 page + tab + route)
+
 ## [v0.2.0] - 2026-07-10
 
 增量版本。在 v0.1 已部署的基础上,新增 3 个能力。

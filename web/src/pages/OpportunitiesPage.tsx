@@ -9,7 +9,7 @@ import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useAuthStore } from '../store/authStore';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
-import { canCreateOpportunity } from '../utils/rbac';
+import { canCreateOpportunity, canDeleteOpportunity } from '../utils/rbac';
 import type {
   FieldDefinition,
   Opportunity,
@@ -17,6 +17,7 @@ import type {
 } from '../types/contracts';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import ChartCard from '../components/ChartCard';
 import BarChart from '../components/BarChart';
 import EmptyState from '../components/EmptyState';
@@ -117,6 +118,26 @@ export default function OpportunitiesPage() {
 
   const visible = allOpps.filter((o) => (stage === 'all' ? true : o.stage === stage));
   const canCreate = canCreateOpportunity(role);
+  const canDelete = canDeleteOpportunity(role);
+
+  const [deleting, setDeleting] = useState<Opportunity | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!client || !deleting) return;
+    setDeletingBusy(true);
+    try {
+      const { error } = await client.from('opportunities').delete().eq('id', deleting.id);
+      if (error) throw error;
+      toast.success(`商机「${deleting.name}」已删除`);
+      setDeleting(null);
+      void loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setDeletingBusy(false);
+    }
+  };
 
   const {
     register,
@@ -293,6 +314,27 @@ export default function OpportunitiesPage() {
       header: '更新时间',
       render: (o) => new Date(o.updated_at).toLocaleDateString('zh-CN'),
     },
+    ...(canDelete
+      ? [
+          {
+            key: 'actions' as const,
+            header: '操作',
+            align: 'right' as const,
+            render: (o: Opportunity) => (
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ color: 'var(--danger)' }}
+                onClick={(e) => {
+                  e.stopPropagation(); // don't trigger row-click navigate
+                  setDeleting(o);
+                }}
+              >
+                删除
+              </button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   if (!client) {
@@ -383,6 +425,25 @@ export default function OpportunitiesPage() {
         emptyTitle="暂无商机"
         emptyDescription={canCreate ? '点击「新建商机」开始录入' : '当前阶段下没有匹配的商机'}
         onRowClick={(o) => navigate(`/opportunities/${o.id}`)}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title="删除商机"
+        tone="danger"
+        confirmLabel="确认删除"
+        loading={deletingBusy}
+        onConfirm={handleDelete}
+        onCancel={() => !deletingBusy && setDeleting(null)}
+        message={
+          <>
+            确定要删除商机 <strong>{deleting?.name}</strong>?
+            <br />
+            <span style={{ color: 'var(--danger)', fontSize: 13 }}>
+              此操作不可撤销,关联的项目、评论、交付物也会被级联删除。
+            </span>
+          </>
+        }
       />
 
       <Modal

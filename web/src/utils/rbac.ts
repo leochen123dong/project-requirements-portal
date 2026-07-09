@@ -16,22 +16,23 @@ export function can(role: Role, allowed: readonly Role[]): boolean {
   return allowed.includes(role);
 }
 
-/** Page-level permission matrix. Keep in sync with Layout.tsx nav tabs. */
+/** Page-level permission matrix. Keep in sync with Layout.tsx nav tabs.
+ *  v0.2.1: `tickets` removed (tickets module deprecated per user feedback). */
 export const PAGE_PERMISSIONS = {
   home: ['presales', 'pm', 'delivery', 'postsales', 'admin'] as Role[],
   opportunities: ['presales', 'pm', 'admin'] as Role[],
   projects: ['pm', 'delivery', 'postsales', 'admin'] as Role[],
-  tickets: ['postsales', 'pm', 'admin'] as Role[],
   admin: ['admin'] as Role[],
 } as const;
 
-/** Action-level helpers (used by buttons + RLS-equivalent frontend gates). */
+/** Action-level helpers (used by buttons + RLS-equivalent frontend gates).
+ *  v0.2.1: `canSyncITHub` removed (tickets module deprecated). */
 export const canCreateOpportunity = (r: Role) => can(r, ['presales', 'admin']);
 export const canHandoverOpportunity = (r: Role) => can(r, ['presales', 'admin']);
+export const canDeleteOpportunity = (r: Role) => can(r, ['presales', 'admin']);
 export const canEditProject = (r: Role) => can(r, ['pm', 'admin']);
 export const canAssignTask = (r: Role) => can(r, ['pm', 'delivery', 'admin']);
 export const canCompleteTask = (r: Role) => can(r, ['delivery', 'pm', 'admin']);
-export const canSyncITHub = (r: Role) => can(r, ['postsales', 'admin']);
 export const canViewAdminDashboard = (r: Role) => can(r, ['admin']);
 
 // v0.2 additions

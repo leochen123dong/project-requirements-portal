@@ -6,7 +6,6 @@ import {
   canEditProject,
   canAssignTask,
   canCompleteTask,
-  canSyncITHub,
   canViewAdminDashboard,
   canManageUsers,
   canManageCustomFields,
@@ -39,7 +38,6 @@ const ROLE_GRID: Record<Role, Record<string, boolean>> = {
     completeTask: true,
     uploadArtifact: true,
     comment: true,
-    viewTicket: true,
   },
   delivery: {
     viewProject: true,
@@ -51,8 +49,6 @@ const ROLE_GRID: Record<Role, Record<string, boolean>> = {
   postsales: {
     viewProject: true,
     comment: true,
-    viewTicket: true,
-    syncITHub: true,
   },
   admin: {
     createOpportunity: true,
@@ -64,8 +60,6 @@ const ROLE_GRID: Record<Role, Record<string, boolean>> = {
     completeTask: true,
     uploadArtifact: true,
     comment: true,
-    viewTicket: true,
-    syncITHub: true,
     viewAdminDashboard: true,
   },
 };
@@ -80,15 +74,13 @@ const ACTION_HELPER: Record<string, (r: Role) => boolean> = {
   completeTask: canCompleteTask,
   uploadArtifact: (r) => can(r, ['presales', 'pm', 'delivery', 'admin']),
   comment: (r) => can(r, ['presales', 'pm', 'delivery', 'postsales', 'admin']),
-  viewTicket: (r) => can(r, ['pm', 'postsales', 'admin']),
-  syncITHub: canSyncITHub,
   viewAdminDashboard: canViewAdminDashboard,
 };
 
 test.describe('rbac matrix (docs/ROLES.md source of truth)', () => {
-  test('PAGE_PERMISSIONS exposes the 5 implemented pages', () => {
+  test('PAGE_PERMISSIONS exposes the 4 implemented pages (tickets removed in v0.2.1)', () => {
     expect(Object.keys(PAGE_PERMISSIONS).sort()).toEqual(
-      ['admin', 'home', 'opportunities', 'projects', 'tickets'],
+      ['admin', 'home', 'opportunities', 'projects'],
     );
   });
 

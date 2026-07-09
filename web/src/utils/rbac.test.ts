@@ -4,10 +4,10 @@ import {
   PAGE_PERMISSIONS,
   canCreateOpportunity,
   canHandoverOpportunity,
+  canDeleteOpportunity,
   canEditProject,
   canAssignTask,
   canCompleteTask,
-  canSyncITHub,
   canViewAdminDashboard,
   canManageUsers,
   canManageCustomFields,
@@ -110,9 +110,9 @@ describe('rbac.can()', () => {
 });
 
 describe('PAGE_PERMISSIONS', () => {
-  it('exposes the 5 implemented pages', () => {
+  it('exposes the 4 implemented pages (tickets removed in v0.2.1)', () => {
     expect(Object.keys(PAGE_PERMISSIONS).sort()).toEqual(
-      ['admin', 'home', 'opportunities', 'projects', 'tickets'],
+      ['admin', 'home', 'opportunities', 'projects'],
     );
   });
 
@@ -147,13 +147,8 @@ describe('PAGE_PERMISSIONS', () => {
     }
   });
 
-  it('tickets page gates postsales + pm + admin', () => {
-    const expected: Record<Role, boolean> = {
-      presales: false, pm: true, delivery: false, postsales: true, admin: true,
-    };
-    for (const role of ROLES) {
-      expect(can(role, PAGE_PERMISSIONS.tickets)).toBe(expected[role]);
-    }
+  it('tickets page is removed in v0.2.1', () => {
+    expect(PAGE_PERMISSIONS).not.toHaveProperty('tickets');
   });
 });
 
@@ -182,6 +177,14 @@ describe('action helpers — individual cells', () => {
     expect(canEditProject('postsales')).toBe(false);
   });
 
+  it('canDeleteOpportunity → presales + admin only', () => {
+    expect(canDeleteOpportunity('presales')).toBe(true);
+    expect(canDeleteOpportunity('admin')).toBe(true);
+    expect(canDeleteOpportunity('pm')).toBe(false);
+    expect(canDeleteOpportunity('delivery')).toBe(false);
+    expect(canDeleteOpportunity('postsales')).toBe(false);
+  });
+
   it('canAssignTask → pm + delivery + admin', () => {
     expect(canAssignTask('pm')).toBe(true);
     expect(canAssignTask('delivery')).toBe(true);
@@ -196,14 +199,6 @@ describe('action helpers — individual cells', () => {
     expect(canCompleteTask('admin')).toBe(true);
     expect(canCompleteTask('presales')).toBe(false);
     expect(canCompleteTask('postsales')).toBe(false);
-  });
-
-  it('canSyncITHub → postsales + admin only', () => {
-    expect(canSyncITHub('postsales')).toBe(true);
-    expect(canSyncITHub('admin')).toBe(true);
-    expect(canSyncITHub('pm')).toBe(false);
-    expect(canSyncITHub('delivery')).toBe(false);
-    expect(canSyncITHub('presales')).toBe(false);
   });
 
   it('canViewAdminDashboard → admin only', () => {
@@ -283,8 +278,6 @@ describe('docs/ROLES.md matrix coverage', () => {
     completeTask: canCompleteTask,
     uploadArtifact: (r) => can(r, ['presales', 'pm', 'delivery', 'admin']),
     comment: (r) => can(r, ['presales', 'pm', 'delivery', 'postsales', 'admin']),
-    viewTicket: (r) => can(r, ['pm', 'postsales', 'admin']),
-    syncITHub: canSyncITHub,
     viewAdminDashboard: canViewAdminDashboard,
   };
 
