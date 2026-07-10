@@ -97,6 +97,10 @@ export default function OpportunitiesPage() {
   const [selectedDelivery, setSelectedDelivery] = useState<string>('');
   const [staffError, setStaffError] = useState<string>('');
 
+  // v0.4.1: tag distribution data — active tag defs + per-tag opportunity counts.
+  const [tagDefs, setTagDefs] = useState<Array<{ id: string; label: string; display_order: number }>>([]);
+  const [tagValueCounts, setTagValueCounts] = useState<Record<string, number>>({});
+
   const profile = useAuthStore((s) => s.profile);
 
   useEffect(() => {
@@ -150,6 +154,37 @@ export default function OpportunitiesPage() {
             '加载人员列表失败:' + (e instanceof Error ? e.message : '未知错误'),
           );
         }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
+
+  // v0.4.1: fetch tag definitions + per-tag opportunity counts for the
+  // tag-distribution chart. Runs in parallel with the staff fetch.
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [defsRes, valuesRes] = await Promise.all([
+          client.from('opportunity_tag_definitions').select('id, label, display_order').eq('is_active', true).order('display_order'),
+          client.from('opportunity_tag_values').select('tag_id'),
+        ]);
+        if (cancelled) return;
+        if (defsRes.error) throw defsRes.error;
+        if (valuesRes.error) throw valuesRes.error;
+        setTagDefs((defsRes.data ?? []) as Array<{ id: string; label: string; display_order: number }>);
+        // Group by tag_id client-side
+        const counts: Record<string, number> = {};
+        for (const v of (valuesRes.data ?? []) as Array<{ tag_id: string }>) {
+          counts[v.tag_id] = (counts[v.tag_id] ?? 0) + 1;
+        }
+        setTagValueCounts(counts);
+      } catch {
+        // Non-fatal: chart just shows empty state.
       }
     })();
     return () => {
@@ -436,7 +471,7 @@ export default function OpportunitiesPage() {
         )}
       </div>
 
-      {/* Phase C: stage distribution chart */}
+      {/* v0.3 Phase C: stage distribution chart */}
       <div style={{ marginBottom: 24 }}>
         <ChartCard
           title="商机阶段分布"
@@ -449,6 +484,24 @@ export default function OpportunitiesPage() {
             data={STAGES.map((s) => ({
               label: STAGE_LABEL[s],
               value: allOpps.filter((o) => o.stage === s).length,
+            }))}
+          />
+        </ChartCard>
+      </div>
+
+      {/* v0.4.1: tag distribution chart */}
+      <div style={{ marginBottom: 24 }}>
+        <ChartCard
+          title="标签分布"
+          subtitle="按 tag 聚合 (admin /admin/tags 维护词表)"
+          loading={loading}
+          empty={tagDefs.length === 0}
+          emptyText="暂无标签定义,可在 /admin/tags 添加"
+        >
+          <BarChart
+            data={tagDefs.map((d) => ({
+              label: d.label,
+              value: tagValueCounts[d.id] ?? 0,
             }))}
           />
         </ChartCard>
