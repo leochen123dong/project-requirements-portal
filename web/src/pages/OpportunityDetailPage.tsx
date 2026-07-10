@@ -217,6 +217,12 @@ export default function OpportunityDetailPage() {
   const [showStageConfirm, setShowStageConfirm] = useState(false);
   const [stageChanging, setStageChanging] = useState(false);
 
+  // v0.4.1: edit info flow (name / customer / amount).
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showInfoConfirm, setShowInfoConfirm] = useState(false);
+  const [infoChanging, setInfoChanging] = useState(false);
+  const [infoDraft, setInfoDraft] = useState({ name: '', customer: '', amount: '' });
+
   // Custom field values for this opportunity, paired with their definitions.
   const [customValues, setCustomValues] = useState<
     Array<{ def: FieldDefinition; value: string | null }>
@@ -639,6 +645,35 @@ export default function OpportunityDetailPage() {
     }
   };
 
+  // v0.4.1: edit opportunity info (name / customer / amount). The audit_log
+  // trigger (migration 0008) captures OLD/NEW as payload — the timeline
+  // already renders diff for any field, so the audit entry will appear
+  // automatically as "name: old → new" / "amount: 100000 → 200000" etc.
+  const performInfoUpdate = async () => {
+    if (!client || !opp) return;
+    setInfoChanging(true);
+    try {
+      const update: Database['public']['Tables']['opportunities']['Update'] = {
+        name: infoDraft.name,
+        customer: infoDraft.customer,
+        amount: infoDraft.amount === '' ? null : Number(infoDraft.amount),
+      };
+      const { error } = await client
+        .from('opportunities')
+        .update(update)
+        .eq('id', opp.id);
+      if (error) throw error;
+      toast.success('商机信息已更新');
+      setShowInfoConfirm(false);
+      setShowInfoModal(false);
+      await loadAll(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '更新信息失败');
+    } finally {
+      setInfoChanging(false);
+    }
+  };
+
   if (!client) {
     return (
       <div className="container">
@@ -689,16 +724,34 @@ export default function OpportunityDetailPage() {
               {STAGE_LABEL[opp.stage] ?? opp.stage}
             </span>
             {canUpdate && (
-              <button
-                className="btn btn-secondary btn-sm"
-                style={{ marginLeft: 12, verticalAlign: 'middle' }}
-                onClick={() => {
-                  setPendingStage(opp.stage);
-                  setShowStageModal(true);
-                }}
-              >
-                修改阶段
-              </button>
+              <>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginLeft: 12, verticalAlign: 'middle' }}
+                  onClick={() => {
+                    setPendingStage(opp.stage);
+                    setShowStageModal(true);
+                  }}
+                >
+                  修改阶段
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginLeft: 8, verticalAlign: 'middle' }}
+                  onClick={() => {
+                    if (opp) {
+                      setInfoDraft({
+                        name: opp.name,
+                        customer: opp.customer,
+                        amount: opp.amount === null ? '' : String(opp.amount),
+                      });
+                      setShowInfoModal(true);
+                    }
+                  }}
+                >
+                  编辑信息
+                </button>
+              </>
             )}
           </p>
         </div>
@@ -1081,6 +1134,76 @@ export default function OpportunityDetailPage() {
           setShowStageConfirm(false);
           setPendingStage(null);
         }}
+      />
+
+      {/* v0.4.1: edit opportunity info modal + confirm */}
+      <Modal
+        open={showInfoModal}
+        onClose={() => !infoChanging && setShowInfoModal(false)}
+        title="编辑商机信息"
+        dismissable={!infoChanging}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowInfoModal(false)}
+              disabled={infoChanging}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowInfoConfirm(true)}
+              disabled={infoChanging || !infoDraft.name.trim() || !infoDraft.customer.trim()}
+            >
+              继续
+            </button>
+          </>
+        }
+      >
+        <div className="field">
+          <label className="field-label">名称 *</label>
+          <input
+            className="input"
+            value={infoDraft.name}
+            onChange={(e) => setInfoDraft((d) => ({ ...d, name: e.target.value }))}
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <label className="field-label">客户 *</label>
+          <input
+            className="input"
+            value={infoDraft.customer}
+            onChange={(e) => setInfoDraft((d) => ({ ...d, customer: e.target.value }))}
+          />
+        </div>
+        <div className="field">
+          <label className="field-label">金额 (CNY,留空表示未填)</label>
+          <input
+            className="input"
+            type="number"
+            step="1000"
+            value={infoDraft.amount}
+            onChange={(e) => setInfoDraft((d) => ({ ...d, amount: e.target.value }))}
+          />
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          继续后请确认,所有字段变更将记入审计日志。
+        </p>
+      </Modal>
+
+      <ConfirmDialog
+        open={showInfoConfirm}
+        loading={infoChanging}
+        title="确认编辑商机信息"
+        message="将保存新的名称 / 客户 / 金额,所有变更将记入审计日志。"
+        confirmLabel="确认保存"
+        tone="primary"
+        onConfirm={performInfoUpdate}
+        onCancel={() => !infoChanging && setShowInfoConfirm(false)}
       />
     </div>
   );
