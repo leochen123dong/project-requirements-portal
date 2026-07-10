@@ -12,6 +12,7 @@ import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminCustomFieldsPage from './pages/AdminCustomFieldsPage';
 import AdminTagsPage from './pages/AdminTagsPage';
+import AdminArtifactDefinitionsPage from './pages/AdminArtifactDefinitionsPage';
 import { useAuthStore } from './store/authStore';
 import { fetchProfile, supabase } from './api/supabase';
 
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/fields" element={<AdminCustomFieldsPage />} />
         <Route path="/admin/tags" element={<AdminTagsPage />} />
+        <Route path="/admin/artifacts" element={<AdminArtifactDefinitionsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

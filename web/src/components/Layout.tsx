@@ -28,6 +28,7 @@ export default function Layout() {
     { to: '/admin/users', label: '用户管理', roles: ['admin'] as Role[] },
     { to: '/admin/fields', label: '自定义字段', roles: ['admin'] as Role[] },
     { to: '/admin/tags', label: '标签', roles: ['admin'] as Role[] },
+    { to: '/admin/artifacts', label: '交付物', roles: ['admin'] as Role[] },
   ];
 
   async function handleSignOut() {

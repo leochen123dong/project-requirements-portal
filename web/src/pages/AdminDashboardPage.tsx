@@ -4,7 +4,7 @@ import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/authStore';
-import { canManageCustomFields, canManageTagDefinitions, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
+import { canManageArtifactDefinitions, canManageCustomFields, canManageTagDefinitions, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
 import type {
   AuditLog,
   ChartDatum,
@@ -267,7 +267,8 @@ export default function AdminDashboardPage() {
 
       {(canManageUsers(role as 'admin') ||
         canManageCustomFields(role as 'admin') ||
-        canManageTagDefinitions(role as 'admin')) && (
+        canManageTagDefinitions(role as 'admin') ||
+        canManageArtifactDefinitions(role as 'admin')) && (
         <div className="grid-cards" style={{ marginBottom: 24 }}>
           {canManageUsers(role as 'admin') && (
             <Link to="/admin/users" className="tile">
@@ -288,6 +289,13 @@ export default function AdminDashboardPage() {
               <div className="tile-icon">🏷️</div>
               <h3 className="tile-title">标签管理</h3>
               <p className="tile-desc">管理商机可选标签(金融、重点跟进等)</p>
+            </Link>
+          )}
+          {canManageArtifactDefinitions(role as 'admin') && (
+            <Link to="/admin/artifacts" className="tile">
+              <div className="tile-icon">📦</div>
+              <h3 className="tile-title">交付物管理</h3>
+              <p className="tile-desc">管理立项所需交付物类型(技术方案、SOW 等)</p>
             </Link>
           )}
         </div>
