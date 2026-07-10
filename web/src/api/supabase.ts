@@ -218,6 +218,11 @@ export type Database = {
           entity: string;
           entity_id: string | null;
           at: string;
+          // jsonb on the wire (snake_case keys: full NEW/OLD row snapshot from
+          // the 0008 trigger). Typed as a generic object map; the frontend
+          // accesses named fields like `payload.stage` for diff rendering.
+          // v0.4 Phase A.
+          payload: Record<string, unknown> | null;
         };
         // INSERT happens via trigger (SECURITY DEFINER), but we expose the
         // shape for completeness — admins querying via service_role.
@@ -228,7 +233,12 @@ export type Database = {
           entity: string;
           entity_id?: string | null;
           at?: string;
+          // v0.4 Phase A: trigger populates this; admin tools may set
+          // explicitly via service_role.
+          payload?: Record<string, unknown> | null;
         };
+        // audit_log is append-only; no Update shape used. Kept for
+        // structural parity with other tables.
         Update: {
           id?: string;
           actor_id?: string | null;
@@ -236,6 +246,7 @@ export type Database = {
           entity?: string;
           entity_id?: string | null;
           at?: string;
+          payload?: Record<string, unknown> | null;
         };
       };
       ithub_tickets: {
