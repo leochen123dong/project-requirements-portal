@@ -2,6 +2,64 @@
 
 所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [v0.4.0] - 2026-07-10
+
+增量版本:4 个用户反馈的改进(阶段差异、admin 标签、人员选择、交付物管理)。
+
+### ✨ 新功能
+
+**阶段修改日志显示 before → after**(OpportunityDetailPage timeline)
+- migrations/0008: `audit_log.payload jsonb` 列 + 触发器序列化 OLD/NEW
+- timeline 检测 `payload?.stage` → 显示 "stage → {newStage}" tag chip
+- 旧记录 / 其他字段变更降级为 "[update] {entity}"
+
+**Tag 由 admin 管理**(替代 free-form 文本)
+- migrations/0009: `opportunity_tag_definitions` 词表 + `opportunity_tag_values` 多对多
+- AdminTagsPage CRUD(DataTable + react-hook-form + zod)
+- 商机详情 chip 多选(单点切换,无 modal)+ realtime 同步
+
+**Presales + Delivery 人员选择**
+- migrations/0010: `opportunities.presales_id` + `opportunities.delivery_id` 列
+- 创建 modal 加 2 个 select(presales + delivery,默认当前用户)
+- 详情页 info card 显示两个负责人
+- handover modal 必须选 delivery(写入 projects.delivery_id)
+- owner_id 保留(向后兼容 = 创建者)
+
+**交付物 admin 管理 + 上传**
+- migrations/0011: `artifact_definitions` 词表(种 5 默认)+ `artifacts` 扩展(opportunity_id, artifact_definition_id, project_id nullable)
+- AdminArtifactDefinitionsPage CRUD
+- 创建 `storage.buckets.artifacts` 私有 bucket(50MB 限制)
+- RLS INSERT/UPDATE/DELETE 扩展到 delivery 角色
+
+### 🧪 测试
+
+- 209 单测(+7 vs v0.3.0)+ 41 E2E
+- 修 v0.4 schema 漂移导致的所有 contract test 失败(添加 presales_id / delivery_id / payload / tag_id / artifact_definition_id 字段到 sample)
+
+### 📦 度量
+
+- 构建:650 kB JS / 189 kB gzipped
+- 4 个新 migration 文件
+- 1 个新 admin 页面(AdminArtifactDefinitionsPage)
+- ArtifactUploader 兼容性修复(string 索引)
+
+### ⚠️ 部署注意
+
+跑 4 个 migration(顺序):
+```bash
+0008_audit_log_payload.sql
+0009_opportunity_tag_definitions.sql
+0010_opportunity_staff.sql
+0011_artifact_definitions_and_uploads.sql
+```
+
+### 🔧 已知未完成(v0.4.1 待办)
+
+- OpportunityDetailPage 交付物区改成 admin-managed definitions(目前仍是硬编码 5 个)
+- ProjectDetailPage 改用 entityType/entityId props
+- Handover transfer:`UPDATE artifacts SET project_id = newProjectId WHERE opportunity_id = oldOppId`(handover 时自动传递文件)
+- 完整 E2E 覆盖新 admin 页面
+
 ## [v0.3.0] - 2026-07-10
 
 用户实测反馈迭代:商机详情页补齐 3 个核心能力。
