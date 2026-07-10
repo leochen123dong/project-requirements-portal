@@ -64,43 +64,6 @@ const FieldFormSchema = z
 type FieldFormInput = z.input<typeof FieldFormSchema>;
 
 /**
- * Supabase client with the new tables. The Database type stub in
- * api/supabase.ts does NOT yet include `opportunity_field_definitions`
- * or `opportunity_field_values`, so we cast through `unknown` here.
- * This cast is local to this page and does not leak the schema change
- * to other files (rbac.ts / contracts.ts / supabase.ts remain untouched).
- */
-function makeFieldClient() {
-  return asTypedClient(supabase) as unknown as {
-    from: (table: string) => {
-      select: (cols?: string) => {
-        order: (col: string, opts?: { ascending: boolean }) => Promise<{
-          data: unknown;
-          error: { message: string } | null;
-        }>;
-        eq: (col: string, val: unknown) => Promise<{
-          data: unknown;
-          error: { message: string } | null;
-        }>;
-      };
-      insert: (row: unknown) => Promise<{ data: unknown; error: { message: string } | null }>;
-      update: (row: unknown) => {
-        eq: (col: string, val: unknown) => Promise<{
-          data: unknown;
-          error: { message: string } | null;
-        }>;
-      };
-      delete: () => {
-        eq: (col: string, val: unknown) => Promise<{
-          data: unknown;
-          error: { message: string } | null;
-        }>;
-      };
-    };
-  };
-}
-
-/**
  * Admin page for managing opportunity custom field definitions.
  *
  * CRUD on `opportunity_field_definitions` via the typed client. Field
@@ -113,7 +76,7 @@ function makeFieldClient() {
 export default function AdminCustomFieldsPage() {
   const role = useRole();
   const toast = useToast();
-  const client = makeFieldClient();
+  const client = asTypedClient(supabase);
   const supabaseConfigured = supabase !== null;
 
   const [fields, setFields] = useState<FieldDefinition[]>([]);
@@ -134,7 +97,7 @@ export default function AdminCustomFieldsPage() {
     }
     setLoading(true);
     try {
-      const res = await client
+      const res = await client!
         .from('opportunity_field_definitions')
         .select('*')
         .order('display_order', { ascending: true });
@@ -197,7 +160,7 @@ export default function AdminCustomFieldsPage() {
         display_order: values.display_order,
         is_active: values.is_active,
       };
-      const res = await client.from('opportunity_field_definitions').insert(row);
+      const res = await client!.from('opportunity_field_definitions').insert(row);
       if (res.error) throw new Error(res.error.message);
       toast.success('字段已创建');
       setCreating(false);
@@ -267,7 +230,7 @@ export default function AdminCustomFieldsPage() {
         display_order: values.display_order,
         is_active: values.is_active,
       };
-      const res = await client
+      const res = await client!
         .from('opportunity_field_definitions')
         .update(row)
         .eq('id', editing.id);
@@ -293,14 +256,14 @@ export default function AdminCustomFieldsPage() {
     if (!supabaseConfigured || !deleting) return;
     setDeleteSubmitting(true);
     try {
-      const refRes = await client
+      const refRes = await client!
         .from('opportunity_field_values')
         .select('*')
         .eq('field_id', deleting.id);
       if (refRes.error) throw new Error(refRes.error.message);
       const refCount = Array.isArray(refRes.data) ? refRes.data.length : 0;
 
-      const delRes = await client
+      const delRes = await client!
         .from('opportunity_field_definitions')
         .delete()
         .eq('id', deleting.id);
