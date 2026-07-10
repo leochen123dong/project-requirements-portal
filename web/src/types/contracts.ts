@@ -66,6 +66,8 @@ export const OpportunitySchema = z.object({
   amount: z.number().nullable(),
   stage: OpportunityStageEnum,
   owner_id: z.string().uuid(),
+  presales_id: z.string().uuid().nullable(),  // v0.4: explicit sales engineer (defaults to owner_id)
+  delivery_id: z.string().uuid().nullable(),  // v0.4: explicit delivery engineer (set at handover)
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -113,16 +115,6 @@ export const CommentSchema = z.object({
 });
 export type Comment = z.infer<typeof CommentSchema>;
 
-export const ArtifactSchema = z.object({
-  id: z.string().uuid(),
-  project_id: z.string().uuid(),
-  type: ArtifactTypeEnum,
-  storage_path: z.string(),
-  uploaded_by: z.string().uuid(),
-  created_at: z.string(),
-});
-export type Artifact = z.infer<typeof ArtifactSchema>;
-
 export const ITHubTicketSchema = z.object({
   id: z.string().uuid(),
   project_id: z.string().uuid(),
@@ -135,6 +127,8 @@ export const ITHubTicketSchema = z.object({
 export type ITHubTicket = z.infer<typeof ITHubTicketSchema>;
 
 // Audit log — used by AdminDashboardPage "Recent activity" stream.
+// v0.4: `payload` captures OLD/NEW state (jsonb) so the UI can show
+// before→after diffs (e.g. "stage: lead → qualified").
 export const AuditLogSchema = z.object({
   id: z.string().uuid(),
   actor_id: z.string().uuid().nullable(),
@@ -142,6 +136,7 @@ export const AuditLogSchema = z.object({
   entity: z.string(),
   entity_id: z.string().uuid().nullable(),
   at: z.string(),
+  payload: z.record(z.unknown()).nullable(),
 });
 export type AuditLog = z.infer<typeof AuditLogSchema>;
 
@@ -168,17 +163,63 @@ export const HandoverRequest = z.object({
 });
 export type HandoverRequest = z.infer<typeof HandoverRequest>;
 
-// ─── Opportunity tags (v0.3) ────────────────────────────────────────────────
-// Schema mirrors supabase/migrations/0007_opportunity_tags.sql.
-// Tags are free-form text (no admin-defined vocabulary). One row per tag,
-// composite PK (opportunity_id, tag).
+// ─── Opportunity tags (v0.3 → v0.4 admin-managed) ────────────────────────
+// v0.3: free-form text. v0.4: tag_id FK to admin-managed definitions.
+// Schema mirrors supabase/migrations/0009_opportunity_tag_definitions.sql.
+
+export const OpportunityTagDefinitionSchema = z.object({
+  id: z.string().uuid(),
+  tag: z.string().min(1).max(40),
+  label: z.string().min(1).max(80),
+  color: z.string().default('tag-info'),
+  display_order: z.number().int(),
+  is_active: z.boolean(),
+  created_at: z.string().optional(),
+});
+export type OpportunityTagDefinition = z.infer<typeof OpportunityTagDefinitionSchema>;
 
 export const OpportunityTagSchema = z.object({
   opportunity_id: z.string().uuid(),
-  tag: z.string().min(1).max(40),
+  tag_id: z.string().uuid(),
+  // Join fields (resolved client-side from tag_definitions):
+  tag: z.string().optional(),
+  label: z.string().optional(),
+  color: z.string().optional(),
   created_at: z.string().optional(),
 });
 export type OpportunityTag = z.infer<typeof OpportunityTagSchema>;
+
+// ─── Artifact definitions (v0.4 admin-managed) ─────────────────────────────
+// Schema mirrors supabase/migrations/0011_artifact_definitions_and_uploads.sql.
+
+export const ArtifactDefinitionSchema = z.object({
+  id: z.string().uuid(),
+  type: z.string().min(1).max(30), // machine name e.g. 'HT-JL-01'
+  label: z.string().min(1).max(80),
+  description: z.string().nullable(),
+  is_required: z.boolean(),
+  display_order: z.number().int(),
+  is_active: z.boolean(),
+  created_at: z.string().optional(),
+});
+export type ArtifactDefinition = z.infer<typeof ArtifactDefinitionSchema>;
+
+// v0.4: Artifact row can now belong to EITHER an opportunity (pre-handover)
+// OR a project (post-handover). project_id is nullable now.
+export const ArtifactSchema = z.object({
+  id: z.string().uuid(),
+  artifact_definition_id: z.string().uuid().nullable(),
+  type: z.string(), // legacy field, still required for backwards compat
+  project_id: z.string().uuid().nullable(),
+  opportunity_id: z.string().uuid().nullable(),
+  storage_path: z.string(),
+  uploaded_by: z.string().uuid(),
+  created_at: z.string(),
+  // Join fields (resolved client-side from artifact_definitions):
+  label: z.string().optional(),
+  description: z.string().optional(),
+});
+export type Artifact = z.infer<typeof ArtifactSchema>;
 
 // ─── Admin: Edge Function action contract ────────────────────────────────────
 // Sent to supabase.functions.invoke('admin-users', { body: ... }).

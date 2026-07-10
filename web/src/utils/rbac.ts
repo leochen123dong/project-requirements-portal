@@ -39,3 +39,7 @@ export const canViewAdminDashboard = (r: Role) => can(r, ['admin']);
 // v0.2 additions
 export const canManageUsers = (r: Role) => can(r, ['admin']);
 export const canManageCustomFields = (r: Role) => can(r, ['admin']);
+
+// v0.4 additions
+export const canManageTagDefinitions = (r: Role) => can(r, ['admin']);
+export const canManageArtifactDefinitions = (r: Role) => can(r, ['admin']);
