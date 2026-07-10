@@ -47,3 +47,6 @@ playwright/.cache/
 .cache/
 .parcel-cache/
 .eslintcache
+# Local SQLite DB (regenerated on first run)
+server/data/
+server/uploads/
