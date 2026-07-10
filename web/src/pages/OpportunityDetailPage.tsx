@@ -9,7 +9,7 @@ import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useRealtime } from '../hooks/useRealtime';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
-import { canHandoverOpportunity, canUpdateOpportunity } from '../utils/rbac';
+import { canHandoverOpportunity, canManageTagDefinitions, canUpdateOpportunity } from '../utils/rbac';
 import type {
   AuditLog,
   Comment,
@@ -18,6 +18,7 @@ import type {
   Opportunity,
   OpportunityStage,
   OpportunityTag,
+  OpportunityTagDefinition,
   Profile,
 } from '../types/contracts';
 import EmptyState from '../components/EmptyState';
@@ -113,6 +114,22 @@ type FieldClient = {
 };
 const fieldClient = asTypedClient(supabase) as unknown as FieldClient | null;
 
+function hydrateTagValues(
+  values: OpportunityTag[],
+  defs: OpportunityTagDefinition[],
+): OpportunityTag[] {
+  const defById = new Map(defs.map((d) => [d.id, d]));
+  return values.map((v) => {
+    const def = defById.get(v.tag_id);
+    return {
+      ...v,
+      tag: def?.tag,
+      label: def?.label,
+      color: def?.color,
+    };
+  });
+}
+
 /**
  * Renders a field value according to its definition type:
  *   - text    → plain text
@@ -181,11 +198,9 @@ export default function OpportunityDetailPage() {
   const [auditEntries, setAuditEntries] = useState<AuditLog[]>([]);
   const [authorMap, setAuthorMap] = useState<Record<string, string>>({});
 
-  // Phase C: free-form tags (chips above the deliverables card).
-  const [tags, setTags] = useState<OpportunityTag[]>([]);
-  const [showAddTagModal, setShowAddTagModal] = useState(false);
-  const [newTagValue, setNewTagValue] = useState('');
-  const [addingTag, setAddingTag] = useState(false);
+  // v0.4 Phase B: admin-managed tag definitions + per-opportunity values.
+  const [tagDefs, setTagDefs] = useState<OpportunityTagDefinition[]>([]);
+  const [tagValues, setTagValues] = useState<OpportunityTag[]>([]);
 
   const {
     register,
@@ -205,6 +220,12 @@ export default function OpportunityDetailPage() {
   // transitions cross the guard.
   const canHandover = canHandoverOpportunity(role);
   const canUpdate = canUpdateOpportunity(role);
+  const canManageTags = canManageTagDefinitions(role);
+
+  const selectedTagIds = useMemo(
+    () => new Set(tagValues.map((t) => t.tag_id)),
+    [tagValues],
+  );
 
   // Phase B: merged timeline (comments + audit entries), newest first.
   const timeline = useMemo(
@@ -224,7 +245,16 @@ export default function OpportunityDetailPage() {
       // active field definitions, stored values, comments for this
       // opportunity, audit entries, and the author profiles needed to
       // resolve display names.
-      const [oppRes, pmsRes, defsRes, valsRes, commentsRes, auditRes, tagsRes] = await Promise.all([
+      const [
+        oppRes,
+        pmsRes,
+        defsRes,
+        valsRes,
+        commentsRes,
+        auditRes,
+        tagDefsRes,
+        tagValuesRes,
+      ] = await Promise.all([
         client.from('opportunities').select('*').eq('id', id).maybeSingle(),
         client.from('profiles').select('*').eq('role', 'pm'),
         fieldClient
@@ -253,15 +283,21 @@ export default function OpportunityDetailPage() {
           .order('at', { ascending: false })
           .limit(50),
         client
-          .from('opportunity_tags')
+          .from('opportunity_tag_definitions')
           .select('*')
-          .eq('opportunity_id', id)
-          .order('created_at', { ascending: true }),
+          .eq('is_active', true)
+          .order('display_order', { ascending: true }),
+        client
+          .from('opportunity_tag_values')
+          .select('*')
+          .eq('opportunity_id', id),
       ]);
       if (oppRes.error) throw oppRes.error;
       if (pmsRes.error) throw pmsRes.error;
       if (defsRes.error) throw new Error(defsRes.error.message);
       if (valsRes.error) throw new Error(valsRes.error.message);
+      if (tagDefsRes.error) throw tagDefsRes.error;
+      if (tagValuesRes.error) throw tagValuesRes.error;
       // Comments and audit log are best-effort: failure surfaces as an
       // empty list + a non-fatal toast so the rest of the page still
       // renders. Comments SELECT allows all authenticated; audit_log may
@@ -293,11 +329,13 @@ export default function OpportunityDetailPage() {
       setComments(nextComments);
       setAuditEntries(nextAudit);
 
-      // Phase C: populate tags. SELECT is best-effort and silently skipped on
-      // RLS denial — non-presales roles can still see the page; the empty
-      // list is the correct read-only view.
-      const nextTags = (tagsRes.data ?? []) as unknown as OpportunityTag[];
-      setTags(nextTags);
+      // v0.4 Phase B: active admin-managed definitions + selected values.
+      const nextTagDefs = ((tagDefsRes.data ?? []) as unknown as OpportunityTagDefinition[]).sort(
+        (a, b) => a.display_order - b.display_order,
+      );
+      const nextTagValues = (tagValuesRes.data ?? []) as unknown as OpportunityTag[];
+      setTagDefs(nextTagDefs);
+      setTagValues(hydrateTagValues(nextTagValues, nextTagDefs));
 
       const authorIds = new Set<string>();
       for (const c of nextComments) authorIds.add(c.author_id);
@@ -374,66 +412,80 @@ export default function OpportunityDetailPage() {
     }
   }, [client, id, toast]);
 
-  // ─── Phase C: tags refetch (called after add / remove) ─────────────────
+  // ─── v0.4 Phase B: tags refetch + optimistic toggle ──────────────────────
   const refetchTags = useCallback(async () => {
     if (!client || !id) return;
-    const { data, error } = await client
-      .from('opportunity_tags')
-      .select('*')
-      .eq('opportunity_id', id)
-      .order('created_at', { ascending: true });
-    if (error) {
-      // Best-effort: a stale read isn't worth a toast, but log to console so
-      // devs can spot RLS surprises during E2E.
-      // eslint-disable-next-line no-console
-      console.warn('refetchTags failed:', error.message);
+    const [defsRes, valuesRes] = await Promise.all([
+      client
+        .from('opportunity_tag_definitions')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true }),
+      client
+        .from('opportunity_tag_values')
+        .select('*')
+        .eq('opportunity_id', id),
+    ]);
+    if (defsRes.error) {
+      toast.error('刷新标签定义失败:' + defsRes.error.message);
       return;
     }
-    setTags((data ?? []) as unknown as OpportunityTag[]);
-  }, [client, id]);
+    if (valuesRes.error) {
+      toast.error('刷新标签失败:' + valuesRes.error.message);
+      return;
+    }
+    const nextDefs = ((defsRes.data ?? []) as unknown as OpportunityTagDefinition[]).sort(
+      (a, b) => a.display_order - b.display_order,
+    );
+    const nextValues = (valuesRes.data ?? []) as unknown as OpportunityTag[];
+    setTagDefs(nextDefs);
+    setTagValues(hydrateTagValues(nextValues, nextDefs));
+  }, [client, id, toast]);
 
-  const handleAddTag = async () => {
-    if (!client || !opp) return;
-    const trimmed = newTagValue.trim();
-    if (!trimmed) return;
-    setAddingTag(true);
-    try {
-      const { error } = await client
-        .from('opportunity_tags')
-        .insert({ opportunity_id: opp.id, tag: trimmed });
-      if (error) {
-        // PK violation (duplicate (opportunity_id, tag)) is treated as
-        // success: the user's intent ("make sure this tag exists") is
-        // already satisfied. Any other error surfaces to the user.
-        if (!error.message.toLowerCase().includes('duplicate')) {
-          throw error;
+  const handleToggleTag = useCallback(
+    async (tagDef: OpportunityTagDefinition) => {
+      if (!client || !opp || !canUpdate) return;
+      const existing = tagValues.find((t) => t.tag_id === tagDef.id);
+      const before = tagValues;
+      const optimisticValue: OpportunityTag = {
+        opportunity_id: opp.id,
+        tag_id: tagDef.id,
+        tag: tagDef.tag,
+        label: tagDef.label,
+        color: tagDef.color,
+        created_at: new Date().toISOString(),
+      };
+      setTagValues(
+        existing
+          ? tagValues.filter((t) => t.tag_id !== tagDef.id)
+          : [...tagValues, optimisticValue],
+      );
+      try {
+        const res = existing
+          ? await client
+              .from('opportunity_tag_values')
+              .delete()
+              .eq('opportunity_id', opp.id)
+              .eq('tag_id', tagDef.id)
+          : await client
+              .from('opportunity_tag_values')
+              .insert({ opportunity_id: opp.id, tag_id: tagDef.id });
+        if (res.error) {
+          const msg = res.error.message.toLowerCase();
+          if (!existing && msg.includes('duplicate')) {
+            await refetchTags();
+            return;
+          }
+          throw res.error;
         }
+      } catch (e) {
+        setTagValues(before);
+        toast.error(e instanceof Error ? e.message : '更新标签失败');
+        await refetchTags();
       }
-      setNewTagValue('');
-      setShowAddTagModal(false);
-      await refetchTags();
-      toast.success('标签已添加');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '添加失败');
-    } finally {
-      setAddingTag(false);
-    }
-  };
-
-  const handleRemoveTag = async (tag: string) => {
-    if (!client || !opp) return;
-    try {
-      const { error } = await client
-        .from('opportunity_tags')
-        .delete()
-        .eq('opportunity_id', opp.id)
-        .eq('tag', tag);
-      if (error) throw error;
-      await refetchTags();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败');
-    }
-  };
+    },
+    [canUpdate, client, opp, refetchTags, tagValues, toast],
+  );
 
   // Realtime subscription: re-fetch comments on any INSERT/UPDATE/DELETE on
   // the `comments` table for this opportunity. Server-side filter is the
@@ -467,6 +519,27 @@ export default function OpportunityDetailPage() {
       [id, refetchComments],
     ),
     id ? `target_id=eq.${id}` : undefined,
+  );
+
+  useRealtime(
+    'opportunity_tag_values',
+    useCallback(
+      async (payload: {
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        new: unknown;
+        old: unknown;
+      }) => {
+        if (!id) return;
+        const sourceRow =
+          payload.eventType === 'DELETE'
+            ? (payload.old as { opportunity_id?: string } | null)
+            : (payload.new as { opportunity_id?: string } | null);
+        if (!sourceRow || sourceRow.opportunity_id !== id) return;
+        await refetchTags();
+      },
+      [id, refetchTags],
+    ),
+    id ? `opportunity_id=eq.${id}` : undefined,
   );
 
   const onHandoverSubmit = (values: HandoverInput) => {
@@ -614,47 +687,38 @@ export default function OpportunityDetailPage() {
             <dd style={{ margin: 0 }}>{new Date(opp.created_at).toLocaleString('zh-CN')}</dd>
             <dt style={{ color: 'var(--text-muted)' }}>标签</dt>
             <dd style={{ margin: 0 }}>
-              {tags.length === 0 && !canUpdate ? (
-                <span style={{ color: 'var(--text-muted)' }}>(无标签)</span>
+              {tagDefs.length === 0 ? (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  暂无标签{canManageTags ? ' · 在 /admin/tags 添加' : ''}
+                </span>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {tags.map((t) => (
-                    <span
-                      key={t.tag}
-                      className="tag tag-info"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                    >
-                      {t.tag}
-                      {canUpdate && (
-                        <button
-                          onClick={() => handleRemoveTag(t.tag)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: 0,
-                            color: 'inherit',
-                            fontSize: 12,
-                            lineHeight: 1,
-                          }}
-                          aria-label={`移除标签 ${t.tag}`}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {tags.length === 0 && canUpdate && (
-                    <span style={{ color: 'var(--text-muted)' }}>(无标签)</span>
-                  )}
-                  {canUpdate && (
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={() => setShowAddTagModal(true)}
-                    >
-                      + 添加标签
-                    </button>
-                  )}
+                  {tagDefs.map((tagDef) => {
+                    const selected = selectedTagIds.has(tagDef.id);
+                    return (
+                      <button
+                        key={tagDef.id}
+                        type="button"
+                        className={`tag ${selected ? tagDef.color : 'tag-neutral'}`}
+                        aria-pressed={selected}
+                        disabled={!canUpdate}
+                        onClick={() => handleToggleTag(tagDef)}
+                        title={canUpdate ? `切换标签 ${tagDef.label}` : `${tagDef.label} (只读)`}
+                        style={{
+                          border: selected ? '1px solid transparent' : '1px solid var(--border)',
+                          background: selected ? undefined : 'transparent',
+                          cursor: canUpdate ? 'pointer' : 'default',
+                          opacity: canUpdate ? 1 : 0.85,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        {selected && <span aria-hidden>✓</span>}
+                        <span>{tagDef.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </dd>
@@ -967,57 +1031,6 @@ export default function OpportunityDetailPage() {
           setPendingStage(null);
         }}
       />
-
-      <Modal
-        open={showAddTagModal}
-        onClose={() => {
-          if (addingTag) return;
-          setShowAddTagModal(false);
-          setNewTagValue('');
-        }}
-        title="添加标签"
-        actions={
-          <>
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                setShowAddTagModal(false);
-                setNewTagValue('');
-              }}
-              disabled={addingTag}
-            >
-              取消
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleAddTag}
-              disabled={addingTag || !newTagValue.trim()}
-            >
-              {addingTag ? '添加中...' : '添加'}
-            </button>
-          </>
-        }
-      >
-        <div className="field">
-          <label className="field-label">标签名称</label>
-          <input
-            className="input"
-            value={newTagValue}
-            onChange={(e) => setNewTagValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newTagValue.trim() && !addingTag) {
-                void handleAddTag();
-              }
-            }}
-            placeholder="如:金融行业、老客户介绍"
-            maxLength={40}
-            autoFocus
-          />
-        </div>
-        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
-          标签用于筛选商机,1–40 个字符。重复添加将自动忽略。
-        </p>
-      </Modal>
     </div>
   );
 }

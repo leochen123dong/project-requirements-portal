@@ -4,7 +4,7 @@ import { supabase } from '../api/supabase';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/authStore';
-import { canManageCustomFields, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
+import { canManageCustomFields, canManageTagDefinitions, canManageUsers, canViewAdminDashboard } from '../utils/rbac';
 import type {
   AuditLog,
   ChartDatum,
@@ -265,7 +265,9 @@ export default function AdminDashboardPage() {
         </ChartCard>
       </div>
 
-      {(canManageUsers(role as 'admin') || canManageCustomFields(role as 'admin')) && (
+      {(canManageUsers(role as 'admin') ||
+        canManageCustomFields(role as 'admin') ||
+        canManageTagDefinitions(role as 'admin')) && (
         <div className="grid-cards" style={{ marginBottom: 24 }}>
           {canManageUsers(role as 'admin') && (
             <Link to="/admin/users" className="tile">
@@ -279,6 +281,13 @@ export default function AdminDashboardPage() {
               <div className="tile-icon">🧩</div>
               <h3 className="tile-title">自定义字段</h3>
               <p className="tile-desc">管理商机可选字段 (行业、来源等)</p>
+            </Link>
+          )}
+          {canManageTagDefinitions(role as 'admin') && (
+            <Link to="/admin/tags" className="tile">
+              <div className="tile-icon">🏷️</div>
+              <h3 className="tile-title">标签管理</h3>
+              <p className="tile-desc">管理商机可选标签(金融、重点跟进等)</p>
             </Link>
           )}
         </div>
