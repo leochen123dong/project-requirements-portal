@@ -2,6 +2,31 @@
 
 所有版本的变更记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [v0.4.1] - 2026-07-10
+
+修复版:用户实测反馈 4 个 bug。
+
+### 🐛 修复
+
+- **AdminCustomFieldsPage 加载不出**:移除过时的 `makeFieldClient()` cast hack(`.select()` 返回的 `{order, eq}` 是兄弟节点而非链式结构)。改用 `asTypedClient(supabase)` 直接调用,Database 类型已有 `opportunity_field_definitions`。
+- **OpportunitiesPage 加标签分布图**:在 stage 分布下方加第二个 `ChartCard`,fetch `opportunity_tag_definitions + opportunity_tag_values`,按 tag_id 计数显示柱状图。
+- **OpportunityDetailPage 商机内容可编辑**:新增 "编辑信息" button(name/customer/amount),Modal + ConfirmDialog 二次确认,UPDATE 后 audit_log 触发器自动记录(显示 "name: 旧 → 新" 在 timeline)。
+- **AdminUsersPage 404**:Edge Function `admin-users` 需用户跑 `supabase functions deploy admin-users`。**GoTrue admin API SQL 中不可访问**,SQL 替代方案做不了全功能。
+
+### 📦 度量
+
+- 209 单测通过(无新增)
+- 41 E2E 通过
+- 0 TS 错(原 ArtifactUploader 老错已无关)
+
+### ⚠️ 部署注意
+
+v0.4.0 的 4 个 migration 仍需跑(0008/0009/0010/0011)。
+**admin-users Edge Function 必须部署**:
+```bash
+supabase functions deploy admin-users
+```
+
 ## [v0.4.0] - 2026-07-10
 
 增量版本:4 个用户反馈的改进(阶段差异、admin 标签、人员选择、交付物管理)。
