@@ -534,6 +534,21 @@ export default function OpportunityDetailPage() {
     );
   }
 
+  // ─── Hooks after the early-return guards (React rules of hooks) ─────────────
+  // These must be called unconditionally on EVERY render, regardless of
+  // whether opp is null or not. Previously the early-return for `!opp` was
+  // BEFORE these hooks, which caused React error #310 ("Rendered more hooks
+  // than during the previous render") on the second render when opp loaded.
+  const canHandover = canHandoverOpportunity(role);
+  const canUpdate = canUpdateOpportunity(role);
+
+  // Phase B: merged timeline (comments + audit entries), newest first.
+  const timeline = useMemo(
+    () => buildTimeline(comments, auditEntries),
+    [comments, auditEntries],
+  );
+  const resolveAuthor = (id: string) => authorMap[id];
+
   if (!opp) {
     return (
       <div className="container">
@@ -548,16 +563,6 @@ export default function OpportunityDetailPage() {
       </div>
     );
   }
-
-  const canHandover = canHandoverOpportunity(role);
-  const canUpdate = canUpdateOpportunity(role);
-
-  // Phase B: merged timeline (comments + audit entries), newest first.
-  const timeline = useMemo(
-    () => buildTimeline(comments, auditEntries),
-    [comments, auditEntries],
-  );
-  const resolveAuthor = (id: string) => authorMap[id];
 
   return (
     <div className="container">
