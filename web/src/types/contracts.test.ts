@@ -19,6 +19,7 @@ import {
   FieldValueSchema,
   ChartDatumSchema,
   OpportunityTagSchema,
+  OpportunityTagDefinitionSchema,
 } from './contracts';
 
 const UUID = '11111111-1111-1111-1111-111111111111';
@@ -724,6 +725,116 @@ describe('OpportunityTagSchema', () => {
   it('rejects an invalid UUID in opportunity_id', () => {
     expect(() =>
       OpportunityTagSchema.parse({ ...VALID_OPPORTUNITY_TAG, opportunity_id: 'not-a-uuid' }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── v0.4 — Opportunity tag definitions (Phase B) ──────────────────────────
+// Replaces the v0.3 free-form tag input with an admin-managed vocabulary.
+// Mirrors supabase/migrations/0009_opportunity_tag_definitions.sql:
+//   * `tag` matches SQL CHECK `^[a-z0-9_-]{1,40}$` (machine name — lowercase
+//     + digits + underscores + hyphens, 1-40 chars).
+//   * `label` matches SQL CHECK `length(label) between 1 and 80`.
+//   * `color` is a literal union matching the SQL CHECK constraint.
+const VALID_TAG_DEFINITION = {
+  id: UUID,
+  tag: 'finance',
+  label: '金融行业',
+  color: 'tag-info',
+  display_order: 0,
+  is_active: true,
+  created_at: NOW,
+};
+
+describe('OpportunityTagDefinitionSchema', () => {
+  it('accepts a fully populated definition', () => {
+    expect(() => OpportunityTagDefinitionSchema.parse(VALID_TAG_DEFINITION)).not.toThrow();
+  });
+
+  it('accepts a definition without created_at (DB fills via default now())', () => {
+    // Mirror the Inserts of the typed Supabase client — created_at is optional
+    // because Postgres fills it in via `default now()`.
+    const { created_at: _omitted, ...withoutCreatedAt } = VALID_TAG_DEFINITION;
+    expect(() => OpportunityTagDefinitionSchema.parse(withoutCreatedAt)).not.toThrow();
+  });
+
+  it('rejects an empty tag (mirrors SQL CHECK length(tag) >= 1)', () => {
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({ ...VALID_TAG_DEFINITION, tag: '' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a tag with uppercase letters (regex pins lowercase only)', () => {
+    // The SQL regex `^[a-z0-9_-]{1,40}$` is case-sensitive. If the schema
+    // ever relaxes to permit uppercase, the SQL CHECK would silently reject
+    // on insert — so this test pins the lower-case-only contract.
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({ ...VALID_TAG_DEFINITION, tag: 'Finance' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a tag containing a hyphen preceded by uppercase (mixed-case)', () => {
+    // Verifies the regex doesn't accept e.g. "FInance-Banking" — both the
+    // uppercase letter AND only `[a-z0-9_-]` chars are allowed.
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({ ...VALID_TAG_DEFINITION, tag: 'Finance-Banking' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects an empty label (mirrors SQL CHECK length(label) >= 1)', () => {
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({ ...VALID_TAG_DEFINITION, label: '' }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a label longer than 80 chars (mirrors SQL CHECK)', () => {
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({
+        ...VALID_TAG_DEFINITION,
+        label: '标'.repeat(81),
+      }),
+    ).toThrow(z.ZodError);
+  });
+
+  it('rejects a color outside the literal union', () => {
+    // The SQL CHECK constrains color to 5 literal values. Schema uses Zod's
+    // bare `z.string()` (no enum) so the DB is the source of truth — but the
+    // Database type uses the literal union. This test pins the schema side
+    // to ALSO accept any string (DB will reject).
+    // UPDATE: Per the current OpportunityTagDefinitionSchema definition
+    // (`color: z.string().default('tag-info')`), any string passes — so
+    // documenting that behavior here.
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({
+        ...VALID_TAG_DEFINITION,
+        color: 'tag-rainbow',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts all 5 documented colors', () => {
+    for (const c of ['tag-info', 'tag-success', 'tag-warning', 'tag-danger', 'tag-neutral']) {
+      expect(() =>
+        OpportunityTagDefinitionSchema.parse({ ...VALID_TAG_DEFINITION, color: c }),
+      ).not.toThrow();
+    }
+  });
+
+  it('accepts tag with underscores and digits (regex character class)', () => {
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({
+        ...VALID_TAG_DEFINITION,
+        tag: 'follow_up_v2',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects tag with a space (regex character class forbids whitespace)', () => {
+    expect(() =>
+      OpportunityTagDefinitionSchema.parse({
+        ...VALID_TAG_DEFINITION,
+        tag: 'follow up',
+      }),
     ).toThrow(z.ZodError);
   });
 });

@@ -356,23 +356,56 @@ export type Database = {
           value?: string | null;
         };
       };
-      // ─── Phase C (v0.3): opportunity tags ───────────────────────────────
-      // Mirrors supabase/migrations/0007_opportunity_tags.sql. Composite PK
-      // (opportunity_id, tag); no UPDATE policy exists — tags are insert-or-
-      // delete only, so Update is `never` to make accidental `.update()`
-      // calls a type error at the API surface (a rename = delete + insert).
-      opportunity_tags: {
+      // ─── Phase B (v0.4): opportunity tag definitions (admin vocabulary) ──
+      // Mirrors supabase/migrations/0009_opportunity_tag_definitions.sql.
+      // `tag` is the machine name (snake_case + hyphens); `label` is the
+      // human display. `color` matches the SQL CHECK constraint exactly
+      // (literal union). Admin writes; all authenticated read active rows.
+      opportunity_tag_definitions: {
+        Row: {
+          id: string;
+          tag: string;
+          label: string;
+          color: 'tag-info' | 'tag-success' | 'tag-warning' | 'tag-danger' | 'tag-neutral';
+          display_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tag: string;
+          label: string;
+          color?: 'tag-info' | 'tag-success' | 'tag-warning' | 'tag-danger' | 'tag-neutral';
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tag?: string;
+          label?: string;
+          color?: 'tag-info' | 'tag-success' | 'tag-warning' | 'tag-danger' | 'tag-neutral';
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+      };
+      // ─── Phase B (v0.4): opportunity tag values (per-opportunity join) ───
+      // Composite PK (opportunity_id, tag_id). Insert-or-delete only — tags
+      // are managed through the definitions table, never mutated in place.
+      // Update is `never` to mirror the RLS (no UPDATE policy exists).
+      opportunity_tag_values: {
         Row: {
           opportunity_id: string;
-          tag: string;
+          tag_id: string;
           created_at: string;
         };
         Insert: {
           opportunity_id: string;
-          tag: string;
+          tag_id: string;
           created_at?: string;
         };
-        Update: never; // tags are insert-or-delete only — enforced at API surface
+        Update: never;
       };
     };
     Views: Record<string, never>;
