@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { useToast } from '../hooks/useToast';
 import { asTypedClient } from '../hooks/useSupabaseClient';
 
-const ARTIFACT_LABEL: Record<ArtifactType, string> = {
+const ARTIFACT_LABEL: Record<string, string> = {
   'HT-JL-01': 'HT-JL-01 技术方案',
   'HT-JL-02': 'HT-JL-02 网络拓扑',
   'HT-JL-03-1': 'HT-JL-03-1 实施计划',
@@ -41,22 +41,10 @@ export default function ArtifactUploader({
   const userId = useAuthStore((s) => s.profile?.id ?? null);
   const toast = useToast();
   const client = asTypedClient(supabase);
-  const inputRefs = useRef<Record<ArtifactType, HTMLInputElement | null>>({
-    'HT-JL-01': null,
-    'HT-JL-02': null,
-    'HT-JL-03-1': null,
-    SOW: null,
-    CONTRACT: null,
-  });
-  const [state, setState] = useState<Record<ArtifactType, UploadState>>({
-    'HT-JL-01': { status: 'idle', progress: 0 },
-    'HT-JL-02': { status: 'idle', progress: 0 },
-    'HT-JL-03-1': { status: 'idle', progress: 0 },
-    SOW: { status: 'idle', progress: 0 },
-    CONTRACT: { status: 'idle', progress: 0 },
-  });
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [state, setState] = useState<Record<string, UploadState>>({});
 
-  const latestByType = new Map<ArtifactType, Artifact>();
+  const latestByType = new Map<string, Artifact>();
   for (const a of artifacts) {
     const cur = latestByType.get(a.type);
     if (!cur || cur.created_at < a.created_at) latestByType.set(a.type, a);
@@ -103,7 +91,7 @@ export default function ArtifactUploader({
   const handleRemove = async (a: Artifact) => {
     if (!supabase) return;
     if (!client) return;
-    if (!confirm(`确定移除 ${ARTIFACT_LABEL[a.type]}?`)) return;
+    if (!confirm(`确定移除 ${ARTIFACT_LABEL[a.type] ?? a.type}?`)) return;
     try {
       await supabase.storage.from('artifacts').remove([a.storage_path]);
       const { error } = await client.from('artifacts').delete().eq('id', a.id);
@@ -151,7 +139,7 @@ export default function ArtifactUploader({
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {required.map((t) => {
           const existing = latestByType.get(t);
-          const st = state[t];
+          const st = state[t] ?? { status: 'idle' as const, progress: 0 };
           return (
             <li
               key={t}
@@ -170,7 +158,7 @@ export default function ArtifactUploader({
                 {t}
               </span>
               <span style={{ flex: 1, color: existing ? 'var(--text)' : 'var(--text-muted)' }}>
-                {ARTIFACT_LABEL[t]}
+                {ARTIFACT_LABEL[t] ?? t}
               </span>
               {st.status === 'uploading' && (
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>上传中...</span>

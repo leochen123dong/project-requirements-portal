@@ -198,24 +198,30 @@ export type Database = {
       artifacts: {
         Row: {
           id: string;
-          project_id: string;
+          artifact_definition_id: string | null;  // v0.4
           type: 'HT-JL-01' | 'HT-JL-02' | 'HT-JL-03-1' | 'SOW' | 'CONTRACT';
+          project_id: string | null;              // v0.4: nullable
+          opportunity_id: string | null;          // v0.4: pre-handover upload
           storage_path: string;
           uploaded_by: string;
           created_at: string;
         };
         Insert: {
           id?: string;
-          project_id: string;
+          artifact_definition_id?: string | null;
           type: 'HT-JL-01' | 'HT-JL-02' | 'HT-JL-03-1' | 'SOW' | 'CONTRACT';
+          project_id?: string | null;
+          opportunity_id?: string | null;
           storage_path: string;
           uploaded_by: string;
           created_at?: string;
         };
         Update: {
           id?: string;
-          project_id?: string;
+          artifact_definition_id?: string | null;
           type?: 'HT-JL-01' | 'HT-JL-02' | 'HT-JL-03-1' | 'SOW' | 'CONTRACT';
+          project_id?: string | null;
+          opportunity_id?: string | null;
           storage_path?: string;
           uploaded_by?: string;
           created_at?: string;
@@ -417,6 +423,38 @@ export type Database = {
           created_at?: string;
         };
         Update: never;
+      };
+      artifact_definitions: {
+        Row: {
+          id: string;
+          type: string;
+          label: string;
+          description: string | null;
+          is_required: boolean;
+          display_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          type: string;
+          label: string;
+          description?: string | null;
+          is_required?: boolean;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          type?: string;
+          label?: string;
+          description?: string | null;
+          is_required?: boolean;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
       };
     };
     Views: Record<string, never>;
