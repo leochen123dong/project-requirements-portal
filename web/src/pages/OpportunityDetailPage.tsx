@@ -28,6 +28,9 @@ import CommentEditor from '../components/CommentEditor';
 
 const HandoverSchema = z.object({
   pm_id: z.string().uuid('请选择有效的 PM'),
+  // v0.4 Phase C: delivery engineer is now part of handover — the whole
+  // point of the new `delivery_id` column is to capture it explicitly.
+  delivery_id: z.string().uuid('请选择交付工程师'),
 });
 type HandoverInput = z.input<typeof HandoverSchema>;
 
@@ -177,6 +180,32 @@ export default function OpportunityDetailPage() {
   const [loading, setLoading] = useState(true);
   const [opp, setOpp] = useState<Opportunity | null>(null);
   const [pms, setPms] = useState<Profile[]>([]);
+  // v0.4 Phase C: presales + delivery staff lists. Used both to resolve
+  // display names in the "商机信息" card and to populate dropdowns in the
+  // handover modal / inline-edit selects.
+  const [presalesList, setPresalesList] = useState<Profile[]>([]);
+  const [deliveryList, setDeliveryList] = useState<Profile[]>([]);
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await client
+          .from('profiles')
+          .select('*')
+          .in('role', ['presales', 'admin', 'delivery']);
+        if (cancelled) return;
+        if (error) throw error;
+        const all = (data ?? []) as unknown as Profile[];
+        setPresalesList(all.filter((p) => p.role === 'presales' || p.role === 'admin'));
+        setDeliveryList(all.filter((p) => p.role === 'delivery' || p.role === 'admin'));
+      } catch {
+        // Non-fatal: info card just shows '未指定' for missing names.
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
   const [showHandover, setShowHandover] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [handoverValues, setHandoverValues] = useState<HandoverInput | null>(null);
@@ -209,7 +238,7 @@ export default function OpportunityDetailPage() {
     formState: { errors },
   } = useForm<HandoverInput>({
     resolver: zodResolver(HandoverSchema),
-    defaultValues: { pm_id: '' },
+    defaultValues: { pm_id: '', delivery_id: '' },
   });
 
   // ─── Hooks BEFORE any early-return guards (React rules of hooks) ─────────
@@ -552,12 +581,23 @@ export default function OpportunityDetailPage() {
     if (!client || !opp || !handoverValues) return;
     setHandoverering(true);
     try {
+      // v0.4 Phase C: include delivery_id so the new project knows who
+      // is doing the on-site work. Also backfill the opportunity's
+      // delivery_id if it was previously NULL (so future references
+      // to the opportunity carry the right engineer).
       const insert: Database['public']['Tables']['projects']['Insert'] = {
         opportunity_id: opp.id,
         name: opp.name,
         pm_id: handoverValues.pm_id,
+        delivery_id: handoverValues.delivery_id,
         status: 'initiated',
       };
+      if (!opp.delivery_id) {
+        await client
+          .from('opportunities')
+          .update({ delivery_id: handoverValues.delivery_id })
+          .eq('id', opp.id);
+      }
       const { data: projectData, error: projectErr } = await client
         .from('projects')
         .insert(insert)
@@ -683,6 +723,17 @@ export default function OpportunityDetailPage() {
             </dd>
             <dt style={{ color: 'var(--text-muted)' }}>阶段</dt>
             <dd style={{ margin: 0 }}>{STAGE_LABEL[opp.stage] ?? opp.stage}</dd>
+            <dt style={{ color: 'var(--text-muted)' }}>售前负责人</dt>
+            <dd style={{ margin: 0 }}>
+              {presalesList.find((p) => p.id === opp.presales_id)?.display_name
+                ?? presalesList.find((p) => p.id === opp.owner_id)?.display_name
+                ?? <span style={{ color: 'var(--text-muted)' }}>未指定</span>}
+            </dd>
+            <dt style={{ color: 'var(--text-muted)' }}>交付负责人</dt>
+            <dd style={{ margin: 0 }}>
+              {deliveryList.find((p) => p.id === opp.delivery_id)?.display_name
+                ?? <span style={{ color: 'var(--text-muted)' }}>未指定</span>}
+            </dd>
             <dt style={{ color: 'var(--text-muted)' }}>创建于</dt>
             <dd style={{ margin: 0 }}>{new Date(opp.created_at).toLocaleString('zh-CN')}</dd>
             <dt style={{ color: 'var(--text-muted)' }}>标签</dt>

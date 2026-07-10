@@ -89,6 +89,7 @@ export type Database = {
           opportunity_id: string;
           name: string;
           pm_id: string;
+          delivery_id: string | null;  // v0.4
           status: 'initiated' | 'in_progress' | 'accepted' | 'closed';
           ithub_ticket_id: string | null;
           created_at: string;
@@ -98,6 +99,7 @@ export type Database = {
           opportunity_id: string;
           name: string;
           pm_id: string;
+          delivery_id?: string | null;  // v0.4
           status?: 'initiated' | 'in_progress' | 'accepted' | 'closed';
           ithub_ticket_id?: string | null;
           created_at?: string;

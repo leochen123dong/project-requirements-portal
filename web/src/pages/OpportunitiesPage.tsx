@@ -14,6 +14,7 @@ import type {
   FieldDefinition,
   Opportunity,
   OpportunityStage,
+  Profile,
 } from '../types/contracts';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import Modal from '../components/Modal';
@@ -88,6 +89,16 @@ export default function OpportunitiesPage() {
   const [fieldDraft, setFieldDraft] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // v0.4 Phase C: presales + delivery staff for the create modal. Loaded
+  // once on mount so the dropdowns are ready when the user clicks "新建".
+  const [presalesList, setPresalesList] = useState<Profile[]>([]);
+  const [deliveryList, setDeliveryList] = useState<Profile[]>([]);
+  const [selectedPresales, setSelectedPresales] = useState<string>('');
+  const [selectedDelivery, setSelectedDelivery] = useState<string>('');
+  const [staffError, setStaffError] = useState<string>('');
+
+  const profile = useAuthStore((s) => s.profile);
+
   useEffect(() => {
     if (!client || !userId) {
       setLoading(false);
@@ -115,6 +126,37 @@ export default function OpportunitiesPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // v0.4 Phase C: fetch presales + delivery staff lists once on mount.
+  // These power the two dropdowns in the create modal. Admins appear in
+  // both lists so they can self-assign.
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await client
+          .from('profiles')
+          .select('*')
+          .in('role', ['presales', 'admin', 'delivery']);
+        if (cancelled) return;
+        if (error) throw error;
+        const all = (data ?? []) as unknown as Profile[];
+        setPresalesList(all.filter((p) => p.role === 'presales' || p.role === 'admin'));
+        setDeliveryList(all.filter((p) => p.role === 'delivery' || p.role === 'admin'));
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(
+            '加载人员列表失败:' + (e instanceof Error ? e.message : '未知错误'),
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
 
   const visible = allOpps.filter((o) => (stage === 'all' ? true : o.stage === stage));
   const canCreate = canCreateOpportunity(role);
@@ -164,6 +206,13 @@ export default function OpportunitiesPage() {
         errs[def.id] = '请填写有效数字';
       }
     }
+    // v0.4 Phase C: presales is required (UI-enforced; SQL allows NULL for
+    // legacy rows). Delivery is optional — assignment is deliberate.
+    if (selectedPresales === '') {
+      setStaffError('请选择售前负责人');
+      return;
+    }
+    setStaffError('');
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
       return;
@@ -177,6 +226,8 @@ export default function OpportunitiesPage() {
         amount: values.amount === '' ? null : Number(values.amount),
         stage: values.stage,
         owner_id: userId,
+        presales_id: selectedPresales === '' ? null : selectedPresales,
+        delivery_id: selectedDelivery === '' ? null : selectedDelivery,
       };
       const { data, error } = await client
         .from('opportunities')
@@ -216,6 +267,8 @@ export default function OpportunitiesPage() {
       setShowCreate(false);
       reset({ name: '', customer: '', amount: '', stage: 'lead' });
       setFieldDraft({});
+      setSelectedPresales('');
+      setSelectedDelivery('');
       if (newId) navigate(`/opportunities/${newId}`);
       else void loadAll();
     } catch (e) {
@@ -230,6 +283,16 @@ export default function OpportunitiesPage() {
     setShowCreate(true);
     setFieldDraft({});
     setFieldErrors({});
+    setStaffError('');
+    // Default presales to the current user when they're presales/admin —
+    // the most common case ("I'm creating this for my own pipeline").
+    // Delivery stays empty (assignment is deliberate).
+    if (profile && (profile.role === 'presales' || profile.role === 'admin')) {
+      setSelectedPresales(profile.id);
+    } else {
+      setSelectedPresales('');
+    }
+    setSelectedDelivery('');
     if (!fieldClient) return;
     try {
       const res = await fieldClient
@@ -253,6 +316,9 @@ export default function OpportunitiesPage() {
     setShowCreate(false);
     setFieldDraft({});
     setFieldErrors({});
+    setStaffError('');
+    setSelectedPresales('');
+    setSelectedDelivery('');
   };
 
   const loadAll = async () => {
@@ -517,6 +583,50 @@ export default function OpportunitiesPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* v0.4 Phase C: presales + delivery assignment */}
+          <div className="field">
+            <label className="field-label">
+              售前负责人<span style={{ color: 'var(--danger)', marginLeft: 4 }}>*</span>
+            </label>
+            <select
+              className="select"
+              value={selectedPresales}
+              onChange={(e) => {
+                setSelectedPresales(e.target.value);
+                setStaffError('');
+              }}
+            >
+              <option value="">— 请选择 —</option>
+              {presalesList.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name}
+                  {p.role === 'admin' ? ' (管理员)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label className="field-label">交付负责人</label>
+            <select
+              className="select"
+              value={selectedDelivery}
+              onChange={(e) => setSelectedDelivery(e.target.value)}
+            >
+              <option value="">— 请选择(可留空) —</option>
+              {deliveryList.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name}
+                  {p.role === 'admin' ? ' (管理员)' : ''}
+                </option>
+              ))}
+            </select>
+            {staffError && (
+              <p style={{ color: 'var(--danger)', fontSize: 12, marginTop: 6 }}>
+                {staffError}
+              </p>
+            )}
           </div>
 
           {activeFields.length > 0 && (
