@@ -50,6 +50,11 @@ export type Database = {
           amount: number | null;
           stage: 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
           owner_id: string;
+          // v0.4 Phase C: role-specific staff columns. Both nullable; existing
+          // rows have NULL until backfill / handover. `owner_id` is retained
+          // as the original creator for backwards compatibility.
+          presales_id: string | null;
+          delivery_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -60,6 +65,8 @@ export type Database = {
           amount?: number | null;
           stage?: 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
           owner_id: string;
+          presales_id?: string | null;
+          delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -70,6 +77,8 @@ export type Database = {
           amount?: number | null;
           stage?: 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
           owner_id?: string;
+          presales_id?: string | null;
+          delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
