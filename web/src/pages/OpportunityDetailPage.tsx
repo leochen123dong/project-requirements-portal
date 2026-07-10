@@ -775,6 +775,23 @@ export default function OpportunityDetailPage() {
               const actorName = a.actor_id
                 ? (resolveAuthor(a.actor_id) ?? formatAuthorId(a.actor_id))
                 : '系统';
+              // v0.4 Phase A: recognise concrete field changes captured in
+              // audit_log.payload and render "stage: → 已验证" / "amount → X"
+              // instead of the generic "[update] opportunities". We only have
+              // the NEW value (the trigger stores to_jsonb(NEW) — see
+              // 0008_audit_log_payload.sql), so we render only the arrow target
+              // for MVP. The OLD value can be derived from the next-older
+              // audit/insert entry in a follow-up. Falls back to the previous
+              // generic display for legacy rows (payload === null) or entities
+              // we don't yet have field renderers for.
+              const payload = a.payload;
+              const isOppUpdate = a.action === 'update' && a.entity === 'opportunities' && payload !== null;
+              const rawStage = isOppUpdate ? payload.stage : undefined;
+              const hasStage = typeof rawStage === 'string';
+              const hasAmount = isOppUpdate && payload.amount !== undefined;
+              const stageLabel = hasStage
+                ? (STAGE_LABEL[rawStage as OpportunityStage] ?? String(rawStage))
+                : '';
               return (
                 <li
                   key={`a-${a.id}`}
@@ -789,9 +806,23 @@ export default function OpportunityDetailPage() {
                   }}
                 >
                   <span aria-hidden style={{ fontSize: 14 }}>🔧</span>
-                  <strong style={{ color: 'var(--text)' }}>
-                    [{a.action}] {a.entity}
-                  </strong>
+                  {hasStage ? (
+                    <span
+                      className="tag tag-info"
+                      style={{ fontWeight: 600 }}
+                      title="阶段已变更"
+                    >
+                      <strong>stage</strong> → {stageLabel}
+                    </span>
+                  ) : hasAmount ? (
+                    <strong style={{ color: 'var(--text)' }}>
+                      amount → {String(payload.amount)}
+                    </strong>
+                  ) : (
+                    <strong style={{ color: 'var(--text)' }}>
+                      [{a.action}] {a.entity}
+                    </strong>
+                  )}
                   <span>· 由 {actorName} · {formatAbsolute(event.at)}</span>
                 </li>
               );
